@@ -27,3 +27,40 @@ FinPulse/
 │   └── sentiment.py    # FinBERT Model Inference Logic
 ├── requirements.txt    # Dependency Management
 └── README.md           # Project Documentation
+```
+
+## 📦 Installation & Setup
+Follow these steps to run the engine locally on your machine:
+
+1. Clone the repository:
+
+``` text
+git clone [https://github.com/Sleepiest1304/FinPulse.git](https://github.com/Sleepiest1304/FinPulse.git)
+cd FinPulse
+```
+
+2. Create and Activate a Virtual Environment:
+
+Windows:
+``` text
+python -m venv venv
+.\venv\Scripts\activate
+```
+
+Mac/Linux:
+``` text
+python3 -m venv venv
+source venv/bin/activate
+```
+
+3. Install Required Packages:
+``` text
+pip install -r requirements.txt
+```
+
+4. Launch the Dashboard:
+``` text
+streamlit run app.py
+```
+
+Note: Developed as a proprietary system for quantitative market analysis and portfolio optimization.
