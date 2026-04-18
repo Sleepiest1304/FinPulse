@@ -1,0 +1,1 @@
+# FinPulse: Nifty 50 AI Sentiment Engine (Documentation in progress)
