@@ -21,7 +21,7 @@ Note the top row of the live analysis: FinBERT labels a fair-value *cut* as posi
 ## What it does
 
 - **Collect** (`scripts/collect.py`): fetches headlines for all Nifty 50 tickers (or a subset), scores the ones not seen before with FinBERT, and saves the ticker, title, publisher, link, publish time, fetch time, label, confidence and class probabilities to `data/finpulse.db`. A scheduled GitHub Action runs it twice each weekday and commits the database back to the repo.
-- **Dashboard** (`app.py`): pick a stock, score its latest headlines live, optionally save them, and browse that stock's stored history.
+- **Dashboard** (`app.py` → `views/home.py`): pick a stock, score its latest headlines live, optionally save them, and browse that stock's stored history.
 - **Backtest** (`engine/backtest.py`, *Backtest* page, `scripts/backtest.py`): per ticker and pooled, compares the daily mean sentiment score with the forward 1-day and 5-day returns. Reports Pearson and Spearman correlation, a rough t-statistic, hit rate, the always-up baseline and sample size.
 - **Model evaluation** (`scripts/evaluate_models.py`, *Model Evaluation* page): compares FinBERT with VADER and a majority-class baseline on Financial PhraseBank (accuracy, macro F1, weighted F1).
 
@@ -55,7 +55,7 @@ flowchart LR
     S --> EV
 
     subgraph Streamlit app
-        A[app.py<br/>live + history]
+        A[views/home.py<br/>live + history]
         P1[Backtest page]
         P2[Model Evaluation page]
     end
@@ -120,10 +120,11 @@ The collector workflow refreshes these numbers in [`results/backtest_summary.csv
 
 ```text
 FinPulse/
-├── app.py                     # Streamlit: live scoring + stored history
-├── pages/
-│   ├── 1_Backtest.py          # Streamlit: sentiment vs forward returns
-│   └── 2_Model_Evaluation.py  # Streamlit: FinBERT vs baselines
+├── app.py                     # Streamlit entry point: sidebar navigation
+├── views/
+│   ├── home.py                # live scoring + stored history
+│   ├── backtest.py            # sentiment vs forward returns
+│   └── model_evaluation.py    # FinBERT vs baselines
 ├── engine/
 │   ├── config.py              # Nifty 50 tickers, paths, input validation
 │   ├── data_fetch.py          # yfinance news/prices, schema-tolerant parsing
