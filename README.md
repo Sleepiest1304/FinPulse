@@ -20,10 +20,10 @@ Note the top row of the live analysis: FinBERT labels a fair-value *cut* as posi
 
 ## What it does
 
-- **Collect** (`scripts/collect.py`): fetches headlines for all Nifty 50 tickers (or a subset), scores the ones not seen before with FinBERT, and saves the ticker, title, publisher, link, publish time, fetch time, label, confidence and class probabilities to `data/finpulse.db`. A scheduled GitHub Action runs it twice each weekday and commits the database back to the repo.
-- **Dashboard** (`app.py` → `views/home.py`): pick a stock, score its latest headlines live, optionally save them, and browse that stock's stored history.
-- **Backtest** (`engine/backtest.py`, *Backtest* page, `scripts/backtest.py`): per ticker and pooled, compares the daily mean sentiment score with the forward 1-day and 5-day returns. Reports Pearson and Spearman correlation, a rough t-statistic, hit rate, the always-up baseline and sample size.
-- **Model evaluation** (`scripts/evaluate_models.py`, *Model Evaluation* page): compares FinBERT with VADER and a majority-class baseline on Financial PhraseBank (accuracy, macro F1, weighted F1).
+- **Collect** (`python -m finpulse collect`): fetches headlines for all Nifty 50 tickers (or a subset), scores the ones not seen before with FinBERT, and saves the ticker, title, publisher, link, publish time, fetch time, label, confidence and class probabilities to `data/finpulse.db`. A scheduled GitHub Action runs it twice each weekday and commits the database back to the repo.
+- **Dashboard** (`streamlit run app.py`, *Home* page): pick a stock, score its latest headlines live, optionally save them, and browse that stock's stored history.
+- **Backtest** (`python -m finpulse backtest`, *Backtest* page): per ticker and pooled, compares the daily mean sentiment score with the forward 1-day and 5-day returns. Reports Pearson and Spearman correlation, a rough t-statistic, hit rate, the always-up baseline and sample size.
+- **Model evaluation** (`python -m finpulse evaluate`, *Model Evaluation* page): compares FinBERT with VADER and a majority-class baseline on Financial PhraseBank (accuracy, macro F1, weighted F1).
 
 ## Architecture
 
@@ -35,27 +35,28 @@ flowchart LR
         FPB[Financial PhraseBank<br/>via Hugging Face Hub]
     end
 
-    subgraph engine
-        DF[data_fetch.py<br/>schema-tolerant parsing,<br/>retries + backoff]
+    subgraph finpulse ["finpulse package"]
+        N[news.py<br/>schema-tolerant parsing,<br/>retries + backoff]
+        PR[prices.py]
         S[sentiment.py<br/>FinBERT, lazy-loaded]
         ST[storage.py<br/>SQLite]
         BT[backtest.py<br/>no-look-ahead alignment,<br/>stats]
         EV[evaluation.py<br/>accuracy / F1]
     end
 
-    GHA[[GitHub Actions<br/>collect.yml, cron]] --> C[scripts/collect.py]
-    YN --> DF --> C
+    GHA[[GitHub Actions<br/>collect.yml, cron]] --> CLI[cli.py<br/>python -m finpulse]
+    CLI --> C[collect.py]
+    YN --> N --> C
     C --> S --> C
     C --> ST
     ST --> DB[(data/finpulse.db)]
     DB --> BT
-    YP --> DF
-    DF --> BT
+    YP --> PR --> BT
     FPB --> EV
     S --> EV
 
-    subgraph Streamlit app
-        A[views/home.py<br/>live + history]
+    subgraph ui ["Streamlit app: app.py + ui/"]
+        A[Home<br/>live + history]
         P1[Backtest page]
         P2[Model Evaluation page]
     end
@@ -113,35 +114,43 @@ The collector workflow refreshes these numbers in [`results/backtest_summary.csv
 - **Small, biased news sample.** Yahoo Finance's feed is mostly English-language, international-facing coverage, often syndicated or auto-generated ("fair value estimate" style stories). It is not representative of the news Indian market participants act on. Some items are only loosely related to the stock they are filed under (for example, a general piece on the US housing market listed for Apollo Hospitals), which adds noise to that stock's score.
 - **Headline-only, off-domain model.** FinBERT reads only titles, truncated to 128 tokens, and was fine-tuned on English financial news about Finnish companies (Financial PhraseBank), not Indian market news.
 - **Pooled observations are not independent.** Stocks move together, so the t-statistic is a rough guide, not a valid p-value.
-- **Survivorship and membership drift.** The ticker list in `engine/config.py` is a snapshot of current Nifty 50 members and is not point-in-time.
+- **Survivorship and membership drift.** The ticker list in `finpulse/config.py` is a snapshot of current Nifty 50 members and is not point-in-time.
 - **Ephemeral storage on Streamlit Cloud.** Headlines saved from the deployed app's *Save* checkbox are lost when the app restarts. Lasting history comes from the GitHub Action.
 
 ## Project structure
 
 ```text
 FinPulse/
-├── app.py                     # Streamlit entry point: sidebar navigation
-├── views/
-│   ├── home.py                # live scoring + stored history
-│   ├── backtest.py            # sentiment vs forward returns
-│   └── model_evaluation.py    # FinBERT vs baselines
-├── engine/
+├── app.py                     # Streamlit entry point: sidebar navigation only
+├── finpulse/                  # core library (no Streamlit imports)
+│   ├── __main__.py            # enables `python -m finpulse`
+│   ├── cli.py                 # collect | backtest | evaluate commands
 │   ├── config.py              # Nifty 50 tickers, paths, input validation
-│   ├── data_fetch.py          # yfinance news/prices, schema-tolerant parsing
+│   ├── news.py                # Yahoo headlines, schema-tolerant parsing
+│   ├── prices.py              # Yahoo daily closes
 │   ├── retry.py               # retry with exponential backoff
 │   ├── sentiment.py           # FinBERT inference (lazy-loaded)
 │   ├── storage.py             # SQLite persistence
-│   ├── backtest.py            # alignment + statistics
-│   ├── evaluation.py          # metrics + Financial PhraseBank loader
-│   └── ui.py                  # Streamlit caching wrappers
-├── scripts/
-│   ├── collect.py             # fetch + score + store (cron-friendly)
-│   ├── backtest.py            # writes results/backtest_*.csv
-│   └── evaluate_models.py     # writes results/model_eval.{json,md}
-├── tests/                     # pytest, network fully mocked
-├── data/finpulse.db           # created by the collector
-└── .github/workflows/         # ci.yml, collect.yml, evaluate.yml
+│   ├── collect.py             # one fetch → score → store pass
+│   ├── backtest.py            # no-look-ahead alignment + statistics
+│   └── evaluation.py          # metrics, PhraseBank loader, model comparison
+├── ui/                        # Streamlit layer, depends on finpulse/
+│   ├── cache.py               # st.cache wrappers around finpulse calls
+│   └── pages/
+│       ├── home.py            # live scoring + stored history
+│       ├── backtest.py        # sentiment vs forward returns
+│       └── model_evaluation.py
+├── tests/                     # one test file per finpulse module; network mocked
+├── data/finpulse.db           # headline history, committed by the collector
+├── results/                   # backtest CSVs and model evaluation output
+├── docs/screenshots/
+├── .github/workflows/         # ci.yml, collect.yml, evaluate.yml
+├── pyproject.toml             # tool config (pytest)
+├── requirements.txt           # runtime deps (also used by Streamlit Cloud)
+└── requirements-dev.txt       # pytest, vaderSentiment
 ```
+
+Dependencies point one way: `ui/` imports `finpulse/`, never the reverse. So the core logic can be tested and run from the CLI without Streamlit.
 
 ## Running locally
 
@@ -152,9 +161,9 @@ python -m venv venv
 # Windows: .\venv\Scripts\activate    macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
 
-python scripts/collect.py            # all 50 tickers (first run downloads FinBERT, ~440 MB)
-python scripts/collect.py TCS INFY   # or a subset
-python scripts/backtest.py
+python -m finpulse collect              # all 50 tickers (first run downloads FinBERT, ~440 MB)
+python -m finpulse collect TCS INFY     # or a subset
+python -m finpulse backtest             # writes results/backtest_*.csv
 streamlit run app.py
 ```
 
@@ -162,9 +171,11 @@ Model evaluation and tests:
 
 ```bash
 pip install -r requirements-dev.txt
-python scripts/evaluate_models.py    # downloads Financial PhraseBank from the Hugging Face Hub
+python -m finpulse evaluate             # downloads Financial PhraseBank from the Hugging Face Hub
 pytest
 ```
+
+Run `python -m finpulse <command> --help` for each command's options.
 
 Tests mock all network calls and never load FinBERT, so they run without torch or transformers installed. That is exactly how CI runs them.
 
