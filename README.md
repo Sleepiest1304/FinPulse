@@ -88,12 +88,25 @@ FinBERT rows are filled in by running the **Evaluate models** workflow (Actions 
 
 ### Backtest
 
-There are no results yet. Sentiment history starts at zero and only builds up once the scheduled collector runs. Yahoo Finance returns only about 10 recent headlines per ticker per request, so useful sample sizes will take weeks to months. The latest numbers are in [`results/backtest_summary.csv`](results/backtest_summary.csv) (refreshed by the collector workflow) and on the Backtest page. The page warns when there are fewer than 100 observations.
+First collection run, 2026-11-23: 370 headlines for 47 tickers (Yahoo returned none for ITC, JSWSTEEL and TRENT). Yahoo returns at most 10 headlines per ticker, but not only recent ones, so publish dates run from December 2025 to November 2026, mostly July to November 2026. Pooled across tickers:
+
+| Horizon | n (stock-days) | Pearson r | Spearman ρ | t-stat | Hit rate | Up-day rate |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 day | 305 | +0.003 | +0.020 | 0.06 | 55.4% | 54.1% |
+| 5 day | 291 | −0.153 | −0.169 | −2.63 | 49.8% | 54.3% |
+
+How to read this:
+
+- **1 day:** no measurable relationship. The hit rate is about one point above the always-up baseline, which is within noise.
+- **5 day:** a weak *negative* correlation. More positive headlines went with slightly lower returns over the next five days, and the hit rate is *below* the always-up baseline. The t-stat looks notable but is overstated: 5-day windows on consecutive days overlap, stocks co-move, and this is one of 2 horizons × 47 tickers tested. Treat it as noise until it holds up on later, out-of-sample data.
+- **Sample:** the sample is small and not a random draw. It contains only the headlines Yahoo still served on one day, spread unevenly over a year (1 to 10 per ticker).
+
+The collector workflow refreshes these numbers in [`results/backtest_summary.csv`](results/backtest_summary.csv), including per-ticker rows, and the Backtest page computes them live. The table above records the first run and will not update itself.
 
 ## Limitations
 
 - **Correlation is not prediction.** Even a statistically significant correlation in this setup would not mean you could trade on it profitably: transaction costs, slippage and multiple-testing across 50 tickers × 2 horizons are not accounted for.
-- **Small, biased news sample.** Yahoo Finance's feed is mostly English-language, international-facing coverage, often syndicated or auto-generated ("fair value estimate" style stories). It is not representative of the news Indian market participants act on.
+- **Small, biased news sample.** Yahoo Finance's feed is mostly English-language, international-facing coverage, often syndicated or auto-generated ("fair value estimate" style stories). It is not representative of the news Indian market participants act on. Some items are only loosely related to the stock they are filed under (for example, a general piece on the US housing market listed for Apollo Hospitals), which adds noise to that stock's score.
 - **Headline-only, off-domain model.** FinBERT reads only titles, truncated to 128 tokens, and was fine-tuned on English financial news about Finnish companies (Financial PhraseBank), not Indian market news.
 - **Pooled observations are not independent.** Stocks move together, so the t-statistic is a rough guide, not a valid p-value.
 - **Survivorship and membership drift.** The ticker list in `engine/config.py` is a snapshot of current Nifty 50 members and is not point-in-time.
