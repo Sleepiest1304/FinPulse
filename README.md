@@ -17,7 +17,6 @@ FinPulse collects recent Yahoo Finance headlines for the 50 stocks in India's Ni
 
 Note the top row of the live analysis: FinBERT labels a fair-value *cut* as positive (0.93 confidence). It is a real example of the headline-level errors described under [Limitations](#limitations).
 
-<!-- TODO: add model_eval.png to docs/screenshots/ -->
 
 ## What it does
 
