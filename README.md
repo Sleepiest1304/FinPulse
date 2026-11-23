@@ -1,6 +1,9 @@
 # FinPulse: Nifty 50 News Sentiment
 
 [![CI](https://github.com/Sleepiest1304/FinPulse/actions/workflows/ci.yml/badge.svg)](https://github.com/Sleepiest1304/FinPulse/actions/workflows/ci.yml)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://finpulse-nifty.streamlit.app/)
+
+**Live demo:** https://finpulse-nifty.streamlit.app/
 
 FinPulse collects recent Yahoo Finance headlines for the 50 stocks in India's Nifty 50 index and scores each one with [FinBERT](https://huggingface.co/ProsusAI/finbert), a BERT model fine-tuned for financial sentiment. It stores every scored headline in SQLite so a sentiment history builds up over time. It then tests that history against next-day and next-5-day stock returns and reports the results as they come out, including when they are weak.
 
