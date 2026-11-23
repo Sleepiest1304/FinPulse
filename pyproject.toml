@@ -1,0 +1,7 @@
+# Tool configuration. Dependencies live in requirements.txt (runtime, also
+# used by Streamlit Community Cloud) and requirements-dev.txt (tests/eval).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from engine.backtest import assign_entry_dates, build_panel, forward_returns, summarize
+from finpulse.backtest import assign_entry_dates, build_panel, forward_returns, summarize
 
 # Mon 2 Nov 2026 .. Mon 9 Nov 2026, trading days only (no weekend)
 DAYS = pd.to_datetime(["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05",

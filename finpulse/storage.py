@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from engine.config import DB_PATH
+from finpulse.config import DB_PATH
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS headlines (

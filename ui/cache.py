@@ -4,9 +4,10 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from engine import storage
-from engine.data_fetch import fetch_news, fetch_prices
-from engine.sentiment import get_sentiment, load_model
+from finpulse import storage
+from finpulse.news import fetch_news
+from finpulse.prices import fetch_prices
+from finpulse.sentiment import get_sentiment, load_model
 
 
 @st.cache_resource(show_spinner="Loading FinBERT (first run downloads ~440 MB)...")

@@ -1,8 +1,9 @@
 import pandas as pd
 import streamlit as st
 
-from engine import storage, ui
-from engine.config import FINBERT_MODEL, NIFTY50
+from finpulse import storage
+from ui import cache
+from finpulse.config import FINBERT_MODEL, NIFTY50
 
 st.set_page_config(page_title="FinPulse: Nifty 50 Sentiment", layout="wide")
 
@@ -14,7 +15,7 @@ st.markdown(
     "*Research tool only, not financial advice.*"
 )
 
-ticker = st.selectbox("Stock", NIFTY50, index=NIFTY50.index("RELIANCE.NS"), format_func=ui.short)
+ticker = st.selectbox("Stock", NIFTY50, index=NIFTY50.index("RELIANCE.NS"), format_func=cache.short)
 
 col1, col2 = st.columns([1, 3])
 run = col1.button("Fetch & score headlines", type="primary")
@@ -25,7 +26,7 @@ save = col2.checkbox("Save results to the history database", value=False,
 if run:
     try:
         with st.spinner("Fetching headlines..."):
-            items = ui.news(ticker)
+            items = cache.news(ticker)
     except Exception as exc:
         st.error(f"Could not reach Yahoo Finance after retries: {exc}")
         items = None
@@ -34,7 +35,7 @@ if run:
         st.warning("Yahoo Finance returned no usable headlines for this ticker right now.")
     elif items:
         with st.spinner("Scoring with FinBERT..."):
-            results = ui.scored(tuple(it["title"] for it in items))
+            results = cache.scored(tuple(it["title"] for it in items))
         rows = [{**it, **res} for it, res in zip(items, results)]
         df = pd.DataFrame(rows)
 
@@ -56,14 +57,14 @@ if run:
         )
         if save:
             written = storage.save_scored(rows, FINBERT_MODEL)
-            ui.headlines.clear()
+            cache.headlines.clear()
             st.success(f"Saved {written} new headline(s); {len(rows) - written} were already stored.")
 
 st.divider()
-st.subheader(f"Stored history: {ui.short(ticker)}")
-hist = ui.headlines(ticker)
+st.subheader(f"Stored history: {cache.short(ticker)}")
+hist = cache.headlines(ticker)
 if hist.empty:
-    st.info("No stored headlines for this ticker yet. Run `python scripts/collect.py` "
+    st.info("No stored headlines for this ticker yet. Run `python -m finpulse collect` "
             "or let the scheduled GitHub Action collect them.")
 else:
     when = pd.to_datetime(hist["published_at"].fillna(hist["fetched_at"]), utc=True,

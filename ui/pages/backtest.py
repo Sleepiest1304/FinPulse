@@ -1,8 +1,8 @@
 import pandas as pd
 import streamlit as st
 
-from engine import ui
-from engine.backtest import build_panel, summarize
+from ui import cache
+from finpulse.backtest import build_panel, summarize
 
 st.set_page_config(page_title="FinPulse: Backtest", layout="wide")
 st.title("Backtest: sentiment vs. forward returns")
@@ -14,9 +14,9 @@ st.markdown(
     "or filtered to look better, and none of it is financial advice."
 )
 
-heads = ui.headlines()
+heads = cache.headlines()
 if heads.empty:
-    st.info("No stored headlines yet. Run `python scripts/collect.py` first.")
+    st.info("No stored headlines yet. Run `python -m finpulse collect` first.")
     st.stop()
 
 when = pd.to_datetime(heads["published_at"].fillna(heads["fetched_at"]), utc=True,
@@ -24,7 +24,7 @@ when = pd.to_datetime(heads["published_at"].fillna(heads["fetched_at"]), utc=Tru
 start = (when.min() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
 try:
     with st.spinner("Downloading prices..."):
-        px = ui.prices(tuple(sorted(heads["ticker"].unique())), start)
+        px = cache.prices(tuple(sorted(heads["ticker"].unique())), start)
 except Exception as exc:
     st.error(f"Could not download prices: {exc}")
     st.stop()

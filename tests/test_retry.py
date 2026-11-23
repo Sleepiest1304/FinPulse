@@ -1,6 +1,6 @@
 import pytest
 
-from engine.retry import retry
+from finpulse.retry import retry
 
 
 def test_retry_backoff_delays_grow():

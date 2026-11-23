@@ -37,12 +37,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Collect and score
-        run: python scripts/collect.py
+        run: python -m finpulse collect
 
       - name: Refresh backtest results
         # Needs price data; a failure here should not block saving headlines.
         continue-on-error: true
-        run: python scripts/backtest.py
+        run: python -m finpulse backtest
 
       - name: Commit database and results
         run: |

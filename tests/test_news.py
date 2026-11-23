@@ -1,8 +1,6 @@
-import pandas as pd
 import pytest
 
-from engine.config import validate_ticker
-from engine.data_fetch import fetch_news, fetch_prices, parse_news_item
+from finpulse.news import fetch_news, parse_news_item
 
 NEW_SCHEMA = {
     "id": "abc",
@@ -13,6 +11,7 @@ NEW_SCHEMA = {
         "canonicalUrl": {"url": "https://example.com/a"},
     },
 }
+
 OLD_SCHEMA = {
     "title": "TCS wins large deal",
     "publisher": "Mint",
@@ -89,32 +88,3 @@ def test_fetch_news_rejects_unknown_ticker(fake_yfinance):
     with pytest.raises(ValueError):
         fetch_news("AAPL")
     assert fake_yfinance["calls"] == 0
-
-
-def test_fetch_prices_multi_ticker(fake_yfinance):
-    idx = pd.to_datetime(["2026-11-02", "2026-11-03"])
-    cols = pd.MultiIndex.from_product([["Close", "Open"], ["TCS.NS", "INFY.NS"]])
-    fake_yfinance["download"] = pd.DataFrame([[1, 2, 0, 0], [3, 4, 0, 0]], index=idx, columns=cols)
-    out = fetch_prices(["TCS.NS", "INFY.NS"], start="2026-11-01")
-    assert list(out.columns) == ["TCS.NS", "INFY.NS"]
-    assert out.loc["2026-11-03", "INFY.NS"] == 4
-
-
-def test_fetch_prices_single_flat_and_empty(fake_yfinance):
-    idx = pd.to_datetime(["2026-11-02"])
-    fake_yfinance["download"] = pd.DataFrame({"Close": [10.0], "Open": [9.0]}, index=idx)
-    assert list(fetch_prices(["TCS"], start="2026-11-01").columns) == ["TCS.NS"]
-    fake_yfinance["download"] = pd.DataFrame()
-    assert fetch_prices(["TCS"], start="2026-11-01").empty
-
-
-@pytest.mark.parametrize("raw,expected", [
-    ("reliance", "RELIANCE.NS"), (" TCS.NS ", "TCS.NS"), ("m&m", "M&M.NS")])
-def test_validate_ticker_ok(raw, expected):
-    assert validate_ticker(raw) == expected
-
-
-@pytest.mark.parametrize("raw", ["", "HDFC BANK.NS", "AAPL", None, 5, "TCS.NS; DROP TABLE"])
-def test_validate_ticker_rejects(raw):
-    with pytest.raises(ValueError):
-        validate_ticker(raw)

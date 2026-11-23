@@ -1,16 +1,13 @@
 import sys
 import types
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch):
     """Retries never actually wait in tests."""
-    monkeypatch.setattr("engine.retry.time.sleep", lambda s: None)
+    monkeypatch.setattr("finpulse.retry.time.sleep", lambda s: None)
 
 
 @pytest.fixture

@@ -9,7 +9,7 @@ import functools
 
 import numpy as np
 
-from engine.config import FINBERT_MODEL
+from finpulse.config import FINBERT_MODEL
 
 BATCH_SIZE = 16
 

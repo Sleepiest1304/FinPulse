@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import zipfile
+from collections import Counter
 from pathlib import Path
 
 LABELS = ("negative", "neutral", "positive")
@@ -14,6 +15,10 @@ PHRASEBANK_SUBSETS = {
     "66agree": "Sentences_66Agree.txt",
     "50agree": "Sentences_50Agree.txt",
 }
+
+DATASET = "Financial PhraseBank v1.0 (Malo et al., 2014), CC BY-NC-SA 3.0"
+CAVEAT = ("ProsusAI/finbert was fine-tuned on Financial PhraseBank, so its numbers "
+          "are largely in-sample and overstate accuracy on unseen text.")
 
 
 def accuracy(y_true: list[str], y_pred: list[str]) -> float:
@@ -82,3 +87,49 @@ def load_phrasebank(subset: str = "allagree", cache_dir: Path | None = None):
         name = next(n for n in zf.namelist() if n.endswith(PHRASEBANK_SUBSETS[subset]))
         raw = zf.read(name).decode("latin-1")
     return parse_phrasebank(raw.splitlines())
+
+
+def metrics(name: str, y_true: list[str], y_pred: list[str]) -> dict:
+    return {"model": name, "n": len(y_true),
+            "accuracy": accuracy(y_true, y_pred),
+            "macro_f1": macro_f1(y_true, y_pred),
+            "weighted_f1": weighted_f1(y_true, y_pred)}
+
+
+def evaluate(subsets=("allagree", "50agree"), models=("majority", "vader", "finbert"),
+             loader=None) -> list[dict]:
+    """Score each model on each Financial PhraseBank subset.
+
+    VADER needs ``vaderSentiment`` (requirements-dev.txt); FinBERT needs torch.
+    ``loader`` defaults to ``load_phrasebank`` and is injectable for tests.
+    """
+    loader = loader or load_phrasebank
+    if "vader" in models:
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        vader = SentimentIntensityAnalyzer()
+    if "finbert" in models:
+        from finpulse.sentiment import get_sentiment
+
+    rows = []
+    for subset in subsets:
+        texts, y = loader(subset)
+        print(f"{subset}: {len(texts)} sentences {dict(Counter(y))}")
+        majority = Counter(y).most_common(1)[0][0]
+        if "majority" in models:
+            rows.append({"subset": subset,
+                         **metrics(f"majority ({majority})", y, [majority] * len(y))})
+        if "vader" in models:
+            preds = [vader_label(vader.polarity_scores(t)["compound"]) for t in texts]
+            rows.append({"subset": subset, **metrics("VADER", y, preds)})
+        if "finbert" in models:
+            preds = [r["label"] for r in get_sentiment(texts)]
+            rows.append({"subset": subset, **metrics("FinBERT", y, preds)})
+    return rows
+
+
+def to_markdown(rows: list[dict]) -> str:
+    lines = ["| Subset | Model | n | Accuracy | Macro F1 | Weighted F1 |",
+             "|---|---|---:|---:|---:|---:|"]
+    lines += [f"| {r['subset']} | {r['model']} | {r['n']} | {r['accuracy']:.3f} | "
+              f"{r['macro_f1']:.3f} | {r['weighted_f1']:.3f} |" for r in rows]
+    return "\n".join(lines)
