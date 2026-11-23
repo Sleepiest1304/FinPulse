@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # Tests mock the network and never load FinBERT, so torch/transformers
+      # are deliberately not installed here.
+      - name: Install test dependencies
+        run: pip install pandas numpy yfinance -r requirements-dev.txt
+      - name: Run tests
+        run: pytest
