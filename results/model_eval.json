@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-11-23T16:46:34+00:00",
+  "dataset": "Financial PhraseBank v1.0 (Malo et al., 2014), CC BY-NC-SA 3.0",
+  "finbert_model": "ProsusAI/finbert",
+  "caveat": "ProsusAI/finbert was fine-tuned on Financial PhraseBank, so its numbers are largely in-sample and overstate accuracy on unseen text.",
+  "results": [
+    {
+      "subset": "allagree",
+      "model": "majority (neutral)",
+      "n": 2264,
+      "accuracy": 0.6143992932862191,
+      "macro_f1": 0.25371637026903787,
+      "weighted_f1": 0.4676494757653247
+    },
+    {
+      "subset": "allagree",
+      "model": "VADER",
+      "n": 2264,
+      "accuracy": 0.571113074204947,
+      "macro_f1": 0.48714886272316676,
+      "weighted_f1": 0.5792588286732232
+    },
+    {
+      "subset": "allagree",
+      "model": "FinBERT",
+      "n": 2264,
+      "accuracy": 0.9717314487632509,
+      "macro_f1": 0.962503461452302,
+      "weighted_f1": 0.9720392191964458
+    },
+    {
+      "subset": "50agree",
+      "model": "majority (neutral)",
+      "n": 4846,
+      "accuracy": 0.594098225340487,
+      "macro_f1": 0.2484573894282632,
+      "weighted_f1": 0.4428242823961844
+    },
+    {
+      "subset": "50agree",
+      "model": "VADER",
+      "n": 4846,
+      "accuracy": 0.5433347090383822,
+      "macro_f1": 0.48886695974685684,
+      "weighted_f1": 0.5492939365599409
+    },
+    {
+      "subset": "50agree",
+      "model": "FinBERT",
+      "n": 4846,
+      "accuracy": 0.8895996698307883,
+      "macro_f1": 0.8825330133105712,
+      "weighted_f1": 0.8908367655416758
+    }
+  ]
+}
