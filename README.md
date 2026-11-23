@@ -71,20 +71,20 @@ flowchart LR
 
 ### Model evaluation (Financial PhraseBank v1.0)
 
-Measured 2026-11-23 with `scripts/evaluate_models.py --models majority vader`:
+Measured 2026-11-23 by the *Evaluate models* workflow ([`results/model_eval.md`](results/model_eval.md)):
 
 | Subset | Model | n | Accuracy | Macro F1 | Weighted F1 |
 |---|---|---:|---:|---:|---:|
 | allagree | majority (neutral) | 2264 | 0.614 | 0.254 | 0.468 |
 | allagree | VADER | 2264 | 0.571 | 0.487 | 0.579 |
-| allagree | FinBERT | 2264 | *pending* | *pending* | *pending* |
+| allagree | FinBERT | 2264 | 0.972 | 0.963 | 0.972 |
 | 50agree | majority (neutral) | 4846 | 0.594 | 0.248 | 0.443 |
 | 50agree | VADER | 4846 | 0.543 | 0.489 | 0.549 |
-| 50agree | FinBERT | 4846 | *pending* | *pending* | *pending* |
+| 50agree | FinBERT | 4846 | 0.890 | 0.883 | 0.891 |
 
-FinBERT rows are filled in by running the **Evaluate models** workflow (Actions tab → *Evaluate models* → *Run workflow*), which writes [`results/model_eval.md`](results/model_eval.md).
+Re-run it from Actions → *Evaluate models* → *Run workflow*.
 
-**Important caveat:** `ProsusAI/finbert` was fine-tuned on Financial PhraseBank, so its scores on this dataset are largely in-sample and **overstate** how well it does on unseen headlines. VADER, a general-purpose lexicon model, has never seen this data, so it is the fairer reference. On accuracy it scores *below* the trivial "always neutral" baseline, but it does much better on macro F1.
+**Important caveat:** `ProsusAI/finbert` was fine-tuned on Financial PhraseBank, so its scores on this dataset are largely in-sample and **overstate** how well it does on unseen headlines. The 0.97 on the unanimous-agreement subset says more about fit to training data than about how well it generalises. The 50agree subset adds sentences that human annotators disagreed on, which are harder for any model, and FinBERT drops to 0.89 there. VADER, a general-purpose lexicon model, has never seen this data, so it is the fairer reference. On accuracy it scores *below* the trivial "always neutral" baseline, but it does much better on macro F1.
 
 ### Backtest
 
