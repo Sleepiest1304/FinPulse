@@ -187,7 +187,7 @@ No secrets or API keys are needed.
 
 1. Push this repository to GitHub.
 2. Under **Settings → Actions → General → Workflow permissions**, choose **Read and write permissions** so the collector can commit `data/finpulse.db`.
-3. Open **Actions → Collect headlines → Run workflow** once to seed the database. After that it runs on its schedule (09:00 and 17:00 IST, Monday to Friday).
+3. Open **Actions → Collect headlines → Run workflow** once to seed the database. After that it runs on its schedule (about 08:53 and 16:53 IST, Monday to Friday; GitHub may start scheduled runs late).
 4. Go to [share.streamlit.io](https://share.streamlit.io), click **Create app**, and choose this repo, branch `main`, main file `app.py`.
 5. Under **Advanced settings**, set Python to **3.12**, then **Deploy**.
 6. Streamlit Cloud redeploys when the branch changes, so each collector commit brings new history into the app.

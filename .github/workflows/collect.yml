@@ -4,8 +4,9 @@ name: Collect headlines
 # database back to the repo so sentiment history accumulates over time.
 on:
   schedule:
-    # 03:30 and 11:30 UTC = 09:00 and 17:00 IST, Monday to Friday
-    - cron: "30 3,11 * * 1-5"
+    # 03:23 and 11:23 UTC = 08:53 and 16:53 IST, Monday to Friday.
+    # An off-peak minute: GitHub delays or drops runs queued at :00 and :30.
+    - cron: "23 3,11 * * 1-5"
   workflow_dispatch:
 
 permissions:
