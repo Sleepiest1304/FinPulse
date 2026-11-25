@@ -7,9 +7,11 @@ Commands:
     backtest [--db PATH] [--out DIR]
         Compare stored sentiment with forward returns; writes
         backtest_summary.csv and backtest_panel.csv.
-    evaluate [--subsets ...] [--models ...] [--out DIR]
+    evaluate [--subsets ...] [--models ...] [--out DIR] [--labelled CSV]
         Compare FinBERT, VADER and a majority baseline on Financial
-        PhraseBank; writes model_eval.json and model_eval.md.
+        PhraseBank; writes model_eval.json and model_eval.md. With
+        --labelled, instead compare majority, VADER, FinBERT and a zero-shot
+        model on a hand-labelled set; writes model_eval_indian.{json,md}.
     eventstudy --prices CSV --earnings CSV [--db PATH] [--out DIR] [--perm N]
         Run the pre-registered v3 tests (docs/v3-preregistration.md) on
         locally saved price and earnings files; writes v3_*.csv summaries.
@@ -68,6 +70,8 @@ def cmd_backtest(args) -> int:
 
 
 def cmd_evaluate(args) -> int:
+    if args.labelled:
+        return _evaluate_labelled(args)
     from finpulse.evaluation import CAVEAT, DATASET, evaluate, to_markdown
 
     rows = evaluate(args.subsets, args.models)
@@ -78,6 +82,36 @@ def cmd_evaluate(args) -> int:
     (args.out / "model_eval.json").write_text(json.dumps(out, indent=2))
     table = to_markdown(rows)
     (args.out / "model_eval.md").write_text(table + f"\n\n> {CAVEAT}\n")
+    print(table)
+    return 0
+
+
+def _evaluate_labelled(args) -> int:
+    from collections import Counter
+
+    from finpulse.evaluation import (LABELLED_CAVEAT, ZEROSHOT_MODEL, evaluate_labelled,
+                                     load_labelled, to_markdown_ci)
+
+    texts, y, dropped = load_labelled(args.labelled)
+    if not texts:
+        print("No usable labelled headlines.")
+        return 1
+    models = [m for m in args.models if m != "majority"]
+    models = ["majority"] + models if "majority" in args.models else models
+    if args.models == ["majority", "vader", "finbert"]:   # default: include zero-shot too
+        models.append("zeroshot")
+    rows = evaluate_labelled(texts, y, models)
+    out = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+           "dataset": f"{args.labelled.name}: GDELT headlines from Indian outlets, hand-labelled",
+           "n": len(y), "dropped": dropped, "label_counts": dict(Counter(y)),
+           "finbert_model": FINBERT_MODEL, "zeroshot_model": ZEROSHOT_MODEL,
+           "caveat": LABELLED_CAVEAT, "results": rows}
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "model_eval_indian.json").write_text(json.dumps(out, indent=2))
+    table = to_markdown_ci(rows)
+    (args.out / "model_eval_indian.md").write_text(
+        table + f"\n\nn = {len(y)} ({dict(Counter(y))}), {dropped} rows dropped.\n\n"
+        f"> {LABELLED_CAVEAT}\n")
     print(table)
     return 0
 
@@ -149,8 +183,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("evaluate", help="FinBERT vs baselines on Financial PhraseBank")
     p.add_argument("--subsets", nargs="+", default=["allagree", "50agree"])
     p.add_argument("--models", nargs="+", default=["majority", "vader", "finbert"],
-                   choices=["majority", "vader", "finbert"])
+                   choices=["majority", "vader", "finbert", "zeroshot"])
     p.add_argument("--out", type=Path, default=RESULTS_DIR)
+    p.add_argument("--labelled", type=Path, default=None,
+                   help="CSV of record_id,label[,title] to evaluate instead of PhraseBank")
     p.set_defaults(func=cmd_evaluate)
 
     p = sub.add_parser("eventstudy", help="pre-registered v3 event study")
