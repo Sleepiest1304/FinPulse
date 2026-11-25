@@ -1,0 +1,191 @@
+{
+  "generated_at": "2026-11-25T12:11:03+00:00",
+  "dataset": "labels_todo.csv: GDELT headlines from Indian outlets",
+  "n": 150,
+  "dropped": 0,
+  "label_counts": {
+    "positive": 40,
+    "neutral": 73,
+    "negative": 37
+  },
+  "finbert_model": "ProsusAI/finbert",
+  "zeroshot_model": "facebook/bart-large-mnli",
+  "caveat": "Labels were drafted with an LLM and reviewed and confirmed by the project owner, so they carry one reviewer's judgement and may be anchored on the LLM draft. None of the evaluated models saw these headlines in training or tuning. Small n: read the confidence intervals, not just the point estimates.",
+  "results": [
+    {
+      "subset": "indian_hand_labelled",
+      "key": "majority",
+      "model": "majority (neutral)",
+      "n": 150,
+      "accuracy": 0.4866666666666667,
+      "macro_f1": 0.21823617339312407,
+      "weighted_f1": 0.31862481315396113,
+      "accuracy_ci": [
+        0.4066666666666667,
+        0.5666666666666667
+      ],
+      "macro_f1_ci": [
+        0.19273301737756712,
+        0.24113475177304963
+      ]
+    },
+    {
+      "subset": "indian_hand_labelled",
+      "key": "vader",
+      "model": "VADER",
+      "n": 150,
+      "accuracy": 0.4866666666666667,
+      "macro_f1": 0.4894701160025508,
+      "weighted_f1": 0.4903105082337038,
+      "accuracy_ci": [
+        0.4066666666666667,
+        0.5733333333333334
+      ],
+      "macro_f1_ci": [
+        0.4030315328783201,
+        0.57080402385727
+      ]
+    },
+    {
+      "subset": "indian_hand_labelled",
+      "key": "finbert",
+      "model": "FinBERT",
+      "n": 150,
+      "accuracy": 0.7,
+      "macro_f1": 0.6980313034971876,
+      "weighted_f1": 0.7025739789679628,
+      "accuracy_ci": [
+        0.62,
+        0.7733333333333333
+      ],
+      "macro_f1_ci": [
+        0.6183990096136401,
+        0.7660089587597457
+      ]
+    },
+    {
+      "subset": "indian_hand_labelled",
+      "key": "zeroshot",
+      "model": "Zero-shot (facebook/bart-large-mnli)",
+      "n": 150,
+      "accuracy": 0.5,
+      "macro_f1": 0.45566967585373047,
+      "weighted_f1": 0.3554798535424526,
+      "accuracy_ci": [
+        0.4198333333333336,
+        0.58
+      ],
+      "macro_f1_ci": [
+        0.3980080770984226,
+        0.5065790589347468
+      ]
+    }
+  ],
+  "sensitivity": {
+    "alternatives": "labels_audit_borderline.csv",
+    "swapped": 12,
+    "results": [
+      {
+        "subset": "indian_hand_labelled",
+        "key": "majority",
+        "model": "majority (neutral)",
+        "n": 150,
+        "accuracy": 0.43333333333333335,
+        "macro_f1": 0.20155038759689922,
+        "weighted_f1": 0.26201550387596895,
+        "accuracy_ci": [
+          0.35333333333333333,
+          0.52
+        ],
+        "macro_f1_ci": [
+          0.17405582922824303,
+          0.2280701754385965
+        ]
+      },
+      {
+        "subset": "indian_hand_labelled",
+        "key": "vader",
+        "model": "VADER",
+        "n": 150,
+        "accuracy": 0.5,
+        "macro_f1": 0.5022976981242427,
+        "weighted_f1": 0.49729080502987005,
+        "accuracy_ci": [
+          0.42,
+          0.58
+        ],
+        "macro_f1_ci": [
+          0.41993993522066014,
+          0.577970352326149
+        ]
+      },
+      {
+        "subset": "indian_hand_labelled",
+        "key": "finbert",
+        "model": "FinBERT",
+        "n": 150,
+        "accuracy": 0.68,
+        "macro_f1": 0.6828255424337586,
+        "weighted_f1": 0.68047996704089,
+        "accuracy_ci": [
+          0.6,
+          0.7533333333333333
+        ],
+        "macro_f1_ci": [
+          0.601278541788622,
+          0.7509667286406024
+        ]
+      },
+      {
+        "subset": "indian_hand_labelled",
+        "key": "zeroshot",
+        "model": "Zero-shot (facebook/bart-large-mnli)",
+        "n": 150,
+        "accuracy": 0.5533333333333333,
+        "macro_f1": 0.48538519885566167,
+        "weighted_f1": 0.4144853762400483,
+        "accuracy_ci": [
+          0.47333333333333333,
+          0.6333333333333333
+        ],
+        "macro_f1_ci": [
+          0.43262948494519204,
+          0.5347005920187108
+        ]
+      }
+    ],
+    "ranking": {
+      "accuracy": {
+        "original": [
+          "finbert",
+          "zeroshot",
+          "majority",
+          "vader"
+        ],
+        "alternative": [
+          "finbert",
+          "zeroshot",
+          "vader",
+          "majority"
+        ],
+        "changed": true
+      },
+      "macro_f1": {
+        "original": [
+          "finbert",
+          "vader",
+          "zeroshot",
+          "majority"
+        ],
+        "alternative": [
+          "finbert",
+          "vader",
+          "zeroshot",
+          "majority"
+        ],
+        "changed": false
+      },
+      "changed": true
+    }
+  }
+}

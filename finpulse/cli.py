@@ -12,6 +12,10 @@ Commands:
         PhraseBank; writes model_eval.json and model_eval.md. With
         --labelled, instead compare majority, VADER, FinBERT and a zero-shot
         model on a hand-labelled set; writes model_eval_indian.{json,md}.
+        --alternatives reruns the scoring with borderline labels swapped.
+    tagger-eval --labelled CSV [--alternatives CSV] [--out DIR]
+        Check the rule-based event-type tagger against labelled headlines;
+        writes event_tagger_eval.{json,md}.
     eventstudy --prices CSV --earnings CSV [--db PATH] [--out DIR] [--perm N]
         Run the pre-registered v3 tests (docs/v3-preregistration.md) on
         locally saved price and earnings files; writes v3_*.csv summaries.
@@ -89,30 +93,72 @@ def cmd_evaluate(args) -> int:
 def _evaluate_labelled(args) -> int:
     from collections import Counter
 
-    from finpulse.evaluation import (LABELLED_CAVEAT, ZEROSHOT_MODEL, evaluate_labelled,
-                                     load_labelled, to_markdown_ci)
+    import pandas as pd
 
-    texts, y, dropped = load_labelled(args.labelled)
-    if not texts:
+    from finpulse import evaluation as ev
+
+    df, dropped = ev.load_labelled_frame(args.labelled)
+    if df.empty:
         print("No usable labelled headlines.")
         return 1
+    texts, y = df["title"].tolist(), df["label"].tolist()
     models = [m for m in args.models if m != "majority"]
     models = ["majority"] + models if "majority" in args.models else models
     if args.models == ["majority", "vader", "finbert"]:   # default: include zero-shot too
         models.append("zeroshot")
-    rows = evaluate_labelled(texts, y, models)
+    preds = ev.predict_labelled(texts, models)
+    rows = ev.score_labelled(y, models, preds)
     out = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-           "dataset": f"{args.labelled.name}: GDELT headlines from Indian outlets, hand-labelled",
+           "dataset": f"{args.labelled.name}: GDELT headlines from Indian outlets",
            "n": len(y), "dropped": dropped, "label_counts": dict(Counter(y)),
-           "finbert_model": FINBERT_MODEL, "zeroshot_model": ZEROSHOT_MODEL,
-           "caveat": LABELLED_CAVEAT, "results": rows}
+           "finbert_model": FINBERT_MODEL, "zeroshot_model": ev.ZEROSHOT_MODEL,
+           "caveat": ev.LABELLED_CAVEAT, "results": rows}
+    table = ev.to_markdown_ci(rows)
+    md = table + f"\n\nn = {len(y)} ({dict(Counter(y))}), {dropped} rows dropped.\n"
+    if args.alternatives:
+        alt, swapped = ev.apply_alternatives(df, pd.read_csv(args.alternatives, dtype=str),
+                                             "sentiment", ["record_id"], "label", ["id"])
+        alt_rows = ev.score_labelled(alt["label"].tolist(), models, preds)
+        cmp = ev.compare_rankings(rows, alt_rows)
+        out["sensitivity"] = {"alternatives": args.alternatives.name, "swapped": swapped,
+                              "results": alt_rows, "ranking": cmp}
+        md += (f"\n### Sensitivity: {swapped} borderline labels swapped to their alternative\n\n"
+               + ev.to_markdown_ci(alt_rows) + "\n\n"
+               + ("Model ranking changes: " + ", ".join(m for m in ("accuracy", "macro_f1")
+                                                         if cmp[m]["changed"])
+                  if cmp["changed"] else "Model ranking is unchanged on accuracy and macro F1.")
+               + "\n")
+    md += f"\n> {ev.LABELLED_CAVEAT}\n"
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "model_eval_indian.json").write_text(json.dumps(out, indent=2))
-    table = to_markdown_ci(rows)
-    (args.out / "model_eval_indian.md").write_text(
-        table + f"\n\nn = {len(y)} ({dict(Counter(y))}), {dropped} rows dropped.\n\n"
-        f"> {LABELLED_CAVEAT}\n")
-    print(table)
+    (args.out / "model_eval_indian.md").write_text(md, encoding="utf-8")
+    print(md)
+    return 0
+
+
+def cmd_tagger_eval(args) -> int:
+    import pandas as pd
+
+    from finpulse import evaluation as ev
+
+    df = pd.read_csv(args.labelled, dtype=str)
+    res = ev.evaluate_tagger(df, args.label_col)
+    out = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+           "dataset": args.labelled.name, "caveat": ev.LABELLED_CAVEAT, **res}
+    md = "### Event-type tagger vs labels\n\n" + ev.tagger_markdown(res) + "\n"
+    if args.alternatives:
+        alt, swapped = ev.apply_alternatives(df, pd.read_csv(args.alternatives, dtype=str),
+                                             "event_type", ["ticker", "title"], args.label_col,
+                                             ["id", "title"])
+        alt_res = ev.evaluate_tagger(alt, args.label_col)
+        out["sensitivity"] = {"alternatives": args.alternatives.name, "swapped": swapped, **alt_res}
+        md += (f"\n### Sensitivity: {swapped} borderline labels swapped to their alternative\n\n"
+               + ev.tagger_markdown(alt_res) + "\n")
+    md += f"\n> {ev.LABELLED_CAVEAT}\n"
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "event_tagger_eval.json").write_text(json.dumps(out, indent=2))
+    (args.out / "event_tagger_eval.md").write_text(md, encoding="utf-8")
+    print(md)
     return 0
 
 
@@ -187,7 +233,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=RESULTS_DIR)
     p.add_argument("--labelled", type=Path, default=None,
                    help="CSV of record_id,label[,title] to evaluate instead of PhraseBank")
+    p.add_argument("--alternatives", type=Path, default=None,
+                   help="with --labelled: CSV of borderline items (sheet,id,title,label_used,"
+                        "plausible_alternative) for a label-sensitivity rerun")
     p.set_defaults(func=cmd_evaluate)
+
+    p = sub.add_parser("tagger-eval", help="rule-based event-type tagger vs labels")
+    p.add_argument("--labelled", type=Path, required=True,
+                   help="CSV with ticker,title,multi_ticker and a label column")
+    p.add_argument("--label-col", default="event_type_hand")
+    p.add_argument("--alternatives", type=Path, default=None,
+                   help="CSV of borderline items for a label-sensitivity rerun")
+    p.add_argument("--out", type=Path, default=RESULTS_DIR)
+    p.set_defaults(func=cmd_tagger_eval)
 
     p = sub.add_parser("eventstudy", help="pre-registered v3 event study")
     p.add_argument("--prices", type=Path, required=True, help="CSV: date + one column per ticker + ^NSEI")

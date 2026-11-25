@@ -1,0 +1,203 @@
+{
+  "generated_at": "2026-11-25T12:07:38+00:00",
+  "dataset": "event_type_labels_todo.csv",
+  "caveat": "Labels were drafted with an LLM and reviewed and confirmed by the project owner, so they carry one reviewer's judgement and may be anchored on the LLM draft. None of the evaluated models saw these headlines in training or tuning. Small n: read the confidence intervals, not just the point estimates.",
+  "n": 100,
+  "accuracy": 0.75,
+  "accuracy_ci": [
+    0.6697500000000005,
+    0.83
+  ],
+  "macro_f1": 0.5832295146098522,
+  "threshold": 0.7,
+  "meets_threshold": true,
+  "per_class": {
+    "earnings": {
+      "precision": 0.9259259259259259,
+      "recall": 0.9615384615384616,
+      "support": 26,
+      "predicted": 27
+    },
+    "regulatory": {
+      "precision": 0.75,
+      "recall": 0.42857142857142855,
+      "support": 7,
+      "predicted": 4
+    },
+    "rumour": {
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "support": 6,
+      "predicted": 2
+    },
+    "management": {
+      "precision": 0.5,
+      "recall": 0.5,
+      "support": 2,
+      "predicted": 2
+    },
+    "macro": {
+      "precision": 0.2222222222222222,
+      "recall": 0.2,
+      "support": 10,
+      "predicted": 9
+    },
+    "other": {
+      "precision": 0.75,
+      "recall": 0.8571428571428571,
+      "support": 49,
+      "predicted": 56
+    }
+  },
+  "confusion": {
+    "earnings": {
+      "earnings": 25,
+      "regulatory": 0,
+      "rumour": 0,
+      "management": 0,
+      "macro": 0,
+      "other": 1
+    },
+    "regulatory": {
+      "earnings": 0,
+      "regulatory": 3,
+      "rumour": 0,
+      "management": 0,
+      "macro": 2,
+      "other": 2
+    },
+    "rumour": {
+      "earnings": 0,
+      "regulatory": 1,
+      "rumour": 2,
+      "management": 0,
+      "macro": 0,
+      "other": 3
+    },
+    "management": {
+      "earnings": 0,
+      "regulatory": 0,
+      "rumour": 0,
+      "management": 1,
+      "macro": 0,
+      "other": 1
+    },
+    "macro": {
+      "earnings": 1,
+      "regulatory": 0,
+      "rumour": 0,
+      "management": 0,
+      "macro": 2,
+      "other": 7
+    },
+    "other": {
+      "earnings": 1,
+      "regulatory": 0,
+      "rumour": 0,
+      "management": 1,
+      "macro": 5,
+      "other": 42
+    }
+  },
+  "sensitivity": {
+    "alternatives": "labels_audit_borderline.csv",
+    "swapped": 10,
+    "n": 100,
+    "accuracy": 0.74,
+    "accuracy_ci": [
+      0.65,
+      0.83
+    ],
+    "macro_f1": 0.4823284109306775,
+    "threshold": 0.7,
+    "meets_threshold": true,
+    "per_class": {
+      "earnings": {
+        "precision": 0.8888888888888888,
+        "recall": 1.0,
+        "support": 24,
+        "predicted": 27
+      },
+      "regulatory": {
+        "precision": 0.75,
+        "recall": 0.42857142857142855,
+        "support": 7,
+        "predicted": 4
+      },
+      "rumour": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "support": 2,
+        "predicted": 2
+      },
+      "management": {
+        "precision": 0.5,
+        "recall": 0.3333333333333333,
+        "support": 3,
+        "predicted": 2
+      },
+      "macro": {
+        "precision": 0.2222222222222222,
+        "recall": 0.18181818181818182,
+        "support": 11,
+        "predicted": 9
+      },
+      "other": {
+        "precision": 0.7857142857142857,
+        "recall": 0.8301886792452831,
+        "support": 53,
+        "predicted": 56
+      }
+    },
+    "confusion": {
+      "earnings": {
+        "earnings": 24,
+        "regulatory": 0,
+        "rumour": 0,
+        "management": 0,
+        "macro": 0,
+        "other": 0
+      },
+      "regulatory": {
+        "earnings": 0,
+        "regulatory": 3,
+        "rumour": 0,
+        "management": 0,
+        "macro": 2,
+        "other": 2
+      },
+      "rumour": {
+        "earnings": 0,
+        "regulatory": 1,
+        "rumour": 0,
+        "management": 0,
+        "macro": 0,
+        "other": 1
+      },
+      "management": {
+        "earnings": 1,
+        "regulatory": 0,
+        "rumour": 0,
+        "management": 1,
+        "macro": 0,
+        "other": 1
+      },
+      "macro": {
+        "earnings": 1,
+        "regulatory": 0,
+        "rumour": 0,
+        "management": 0,
+        "macro": 2,
+        "other": 8
+      },
+      "other": {
+        "earnings": 1,
+        "regulatory": 0,
+        "rumour": 2,
+        "management": 1,
+        "macro": 5,
+        "other": 44
+      }
+    }
+  }
+}

@@ -138,9 +138,10 @@ def to_markdown(rows: list[dict]) -> str:
 # ------------------------------------------------------------ hand-labelled set
 ZEROSHOT_MODEL = "facebook/bart-large-mnli"
 ZEROSHOT_TEMPLATE = "The sentiment of this financial news headline is {}."
-LABELLED_CAVEAT = ("Hand-labelled by one person, so labels carry that person's judgement. "
-                   "No model saw these headlines in training or tuning. Small n: read the "
-                   "confidence intervals, not just the point estimates.")
+LABELLED_CAVEAT = ("Labels were drafted with an LLM and reviewed and confirmed by the "
+                   "project owner, so they carry one reviewer's judgement and may be anchored on "
+                   "the LLM draft. None of the evaluated models saw these headlines in training "
+                   "or tuning. Small n: read the confidence intervals, not just the point estimates.")
 
 
 def zeroshot_labels(texts: list[str], model: str = ZEROSHOT_MODEL, batch_size: int = 16) -> list[str]:
@@ -172,10 +173,11 @@ def bootstrap_ci(y_true, y_pred, metric, n_boot: int = 2000, seed: int = 2026,
     return float(np.quantile(vals, a)), float(np.quantile(vals, 1 - a))
 
 
-def load_labelled(path: Path, rebuild=None) -> tuple[list[str], list[str], int]:
-    """Read ``record_id,label[,title]``. Missing titles are rebuilt from GDELT.
+def load_labelled_frame(path: Path, rebuild=None):
+    """Read ``record_id,label[,title]``; missing titles are rebuilt from GDELT.
 
-    Returns texts, labels and the number of rows dropped (bad label or no title).
+    Returns the usable rows (record_id, title, label) and the number dropped
+    (unknown label, or no title).
     """
     import pandas as pd
 
@@ -192,12 +194,45 @@ def load_labelled(path: Path, rebuild=None) -> tuple[list[str], list[str], int]:
         found = rebuild(df.loc[missing, "record_id"].tolist())
         df.loc[missing, "title"] = df.loc[missing, "record_id"].map(found)
     ok = df["label"].isin(LABELS) & df["title"].notna()
-    return df.loc[ok, "title"].tolist(), df.loc[ok, "label"].tolist(), int((~ok).sum())
+    return df.loc[ok, ["record_id", "title", "label"]].reset_index(drop=True), int((~ok).sum())
 
 
-def evaluate_labelled(texts, y, models=("majority", "vader", "finbert", "zeroshot"),
-                      predictors=None) -> list[dict]:
-    """Compare models on a hand-labelled set, with bootstrap CIs.
+def load_labelled(path: Path, rebuild=None) -> tuple[list[str], list[str], int]:
+    """Texts, labels and the number of rows dropped (see ``load_labelled_frame``)."""
+    df, dropped = load_labelled_frame(path, rebuild)
+    return df["title"].tolist(), df["label"].tolist(), dropped
+
+
+def apply_alternatives(df, audit, sheet: str, keys: list[str], label_col: str,
+                       audit_keys: list[str] | None = None):
+    """Swap in the ``plausible_alternative`` label for borderline items.
+
+    ``audit`` has columns sheet, <audit_keys>, label_used, plausible_alternative.
+    Every audit row for ``sheet`` must match exactly one row of ``df`` whose
+    current label equals ``label_used``; otherwise this raises, so a stale
+    audit file cannot silently change the wrong rows. Returns a copy of ``df``
+    and the number of labels swapped.
+    """
+    audit_keys = audit_keys or keys
+    rows = audit[audit["sheet"] == sheet]
+    out = df.copy()
+    for _, r in rows.iterrows():
+        want = [str(r[k]) for k in audit_keys]
+        hit = (out[keys].astype(str) == want).all(axis=1)
+        if hit.sum() != 1:
+            raise ValueError(f"audit row {want} matches {int(hit.sum())} rows")
+        current = out.loc[hit, label_col].item()
+        if current != r["label_used"]:
+            raise ValueError(f"audit row {want}: label is {current!r}, audit says {r['label_used']!r}")
+        out.loc[hit, label_col] = r["plausible_alternative"]
+    return out, len(rows)
+
+
+MODEL_NAMES = {"vader": "VADER", "finbert": "FinBERT", "zeroshot": f"Zero-shot ({ZEROSHOT_MODEL})"}
+
+
+def predict_labelled(texts, models, predictors=None) -> dict[str, list[str]]:
+    """Predictions of each non-baseline model.
 
     ``predictors`` maps model key -> callable(texts) -> labels, for tests.
     """
@@ -211,20 +246,44 @@ def evaluate_labelled(texts, y, models=("majority", "vader", "finbert", "zerosho
         predictors["finbert"] = lambda ts: [r["label"] for r in get_sentiment(ts)]
     if "zeroshot" in models and "zeroshot" not in predictors:
         predictors["zeroshot"] = zeroshot_labels
-    names = {"vader": "VADER", "finbert": "FinBERT", "zeroshot": f"Zero-shot ({ZEROSHOT_MODEL})"}
+    return {k: list(predictors[k](texts)) for k in models if k != "majority"}
 
+
+def score_labelled(y, models, predictions) -> list[dict]:
+    """Metrics with bootstrap CIs; ``majority`` predicts the most common label in ``y``."""
     rows = []
     majority = Counter(y).most_common(1)[0][0]
     for key in models:
         if key == "majority":
             name, preds = f"majority ({majority})", [majority] * len(y)
         else:
-            name, preds = names.get(key, key), predictors[key](texts)
-        row = {"subset": "indian_hand_labelled", **metrics(name, y, preds)}
+            name, preds = MODEL_NAMES.get(key, key), predictions[key]
+        row = {"subset": "indian_hand_labelled", "key": key, **metrics(name, y, preds)}
         row["accuracy_ci"] = bootstrap_ci(y, preds, accuracy)
         row["macro_f1_ci"] = bootstrap_ci(y, preds, macro_f1)
         rows.append(row)
     return rows
+
+
+def evaluate_labelled(texts, y, models=("majority", "vader", "finbert", "zeroshot"),
+                      predictors=None) -> list[dict]:
+    """Compare models on a hand-labelled set, with bootstrap CIs."""
+    return score_labelled(y, models, predict_labelled(texts, models, predictors))
+
+
+def ranking(rows: list[dict], metric: str) -> list[str]:
+    """Model keys from best to worst on ``metric`` (ties keep input order)."""
+    return [r["key"] for r in sorted(rows, key=lambda r: -r[metric])]
+
+
+def compare_rankings(rows: list[dict], alt_rows: list[dict]) -> dict:
+    """Whether swapping labels changes the model order on accuracy or macro F1."""
+    out = {}
+    for m in ("accuracy", "macro_f1"):
+        a, b = ranking(rows, m), ranking(alt_rows, m)
+        out[m] = {"original": a, "alternative": b, "changed": a != b}
+    out["changed"] = out["accuracy"]["changed"] or out["macro_f1"]["changed"]
+    return out
 
 
 def to_markdown_ci(rows: list[dict]) -> str:
@@ -234,4 +293,63 @@ def to_markdown_ci(rows: list[dict]) -> str:
         a, f = r["accuracy_ci"], r["macro_f1_ci"]
         lines.append(f"| {r['model']} | {r['n']} | {r['accuracy']:.3f} [{a[0]:.3f}, {a[1]:.3f}] | "
                      f"{r['macro_f1']:.3f} [{f[0]:.3f}, {f[1]:.3f}] | {r['weighted_f1']:.3f} |")
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------ event-type tagger
+TAGGER_THRESHOLD = 0.70   # docs/v3-preregistration.md, section 2
+
+
+def precision_recall(y_true, y_pred, labels) -> dict[str, dict]:
+    """Per-class precision, recall and counts. None where the class never occurs."""
+    out = {}
+    for c in labels:
+        tp = sum(t == c and p == c for t, p in zip(y_true, y_pred))
+        n_pred = sum(p == c for p in y_pred)
+        n_true = sum(t == c for t in y_true)
+        out[c] = {"precision": tp / n_pred if n_pred else None,
+                  "recall": tp / n_true if n_true else None,
+                  "support": n_true, "predicted": n_pred}
+    return out
+
+
+def confusion(y_true, y_pred, labels) -> dict[str, dict[str, int]]:
+    """Counts as {true label: {predicted label: n}}."""
+    return {t: {p: sum(a == t and b == p for a, b in zip(y_true, y_pred)) for p in labels}
+            for t in labels}
+
+
+def evaluate_tagger(df, label_col: str = "event_type_hand") -> dict:
+    """Compare ``events.tag_headline`` with hand labels.
+
+    ``df`` needs title, multi_ticker and ``label_col``. Every label must be one
+    of ``events.TYPE_ORDER``; anything else raises instead of being mapped.
+    """
+    from finpulse.events import TYPE_ORDER, tag_headline
+
+    y = df[label_col].astype(str).str.strip().str.lower().tolist()
+    unknown = sorted(set(y) - set(TYPE_ORDER))
+    if unknown:
+        raise ValueError(f"labels not in the tagger's categories {TYPE_ORDER}: {unknown}")
+    multi = df["multi_ticker"].astype(str).str.strip().str.lower().isin(["true", "1"]).tolist()
+    pred = [tag_headline(t, m) for t, m in zip(df["title"], multi)]
+    acc = accuracy(y, pred)
+    return {"n": len(y), "accuracy": acc, "accuracy_ci": bootstrap_ci(y, pred, accuracy),
+            "macro_f1": macro_f1(y, pred, TYPE_ORDER),
+            "threshold": TAGGER_THRESHOLD, "meets_threshold": acc >= TAGGER_THRESHOLD,
+            "per_class": precision_recall(y, pred, TYPE_ORDER),
+            "confusion": confusion(y, pred, TYPE_ORDER)}
+
+
+def tagger_markdown(res: dict) -> str:
+    def fmt(x):
+        return "n/a" if x is None else f"{x:.2f}"
+    a = res["accuracy_ci"]
+    lines = [f"Accuracy {res['accuracy']:.3f} [95% CI {a[0]:.3f}, {a[1]:.3f}], macro F1 "
+             f"{res['macro_f1']:.3f}, n = {res['n']}. Pre-registered threshold "
+             f"{res['threshold']:.0%}: {'met' if res['meets_threshold'] else 'not met'}.", "",
+             "| Type | Labelled | Tagged | Precision | Recall |", "|---|---:|---:|---:|---:|"]
+    for c, v in res["per_class"].items():
+        lines.append(f"| {c} | {v['support']} | {v['predicted']} | {fmt(v['precision'])} | "
+                     f"{fmt(v['recall'])} |")
     return "\n".join(lines)
