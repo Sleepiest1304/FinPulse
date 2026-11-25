@@ -135,7 +135,7 @@ def to_markdown(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-# ------------------------------------------------------------ hand-labelled set
+# ------------------------------------------------------------ labelled set (LLM-drafted, author-reviewed)
 ZEROSHOT_MODEL = "facebook/bart-large-mnli"
 ZEROSHOT_TEMPLATE = "The sentiment of this financial news headline is {}."
 LABELLED_CAVEAT = ("Labels were drafted with an LLM and reviewed and confirmed by the "
@@ -258,7 +258,7 @@ def score_labelled(y, models, predictions) -> list[dict]:
             name, preds = f"majority ({majority})", [majority] * len(y)
         else:
             name, preds = MODEL_NAMES.get(key, key), predictions[key]
-        row = {"subset": "indian_hand_labelled", "key": key, **metrics(name, y, preds)}
+        row = {"subset": "indian_labelled", "key": key, **metrics(name, y, preds)}
         row["accuracy_ci"] = bootstrap_ci(y, preds, accuracy)
         row["macro_f1_ci"] = bootstrap_ci(y, preds, macro_f1)
         rows.append(row)
@@ -267,7 +267,7 @@ def score_labelled(y, models, predictions) -> list[dict]:
 
 def evaluate_labelled(texts, y, models=("majority", "vader", "finbert", "zeroshot"),
                       predictors=None) -> list[dict]:
-    """Compare models on a hand-labelled set, with bootstrap CIs."""
+    """Compare models on a labelled set (LLM-drafted, author-reviewed), with bootstrap CIs."""
     return score_labelled(y, models, predict_labelled(texts, models, predictors))
 
 
@@ -320,7 +320,7 @@ def confusion(y_true, y_pred, labels) -> dict[str, dict[str, int]]:
 
 
 def evaluate_tagger(df, label_col: str = "event_type_hand") -> dict:
-    """Compare ``events.tag_headline`` with hand labels.
+    """Compare ``events.tag_headline`` with the labels (LLM-drafted, author-reviewed).
 
     ``df`` needs title, multi_ticker and ``label_col``. Every label must be one
     of ``events.TYPE_ORDER``; anything else raises instead of being mapped.

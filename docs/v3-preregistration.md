@@ -121,3 +121,4 @@ These tests can only detect large effects. Not rejecting the null does **not** s
   - The 1/99 winsorising robustness check applies to event CARs, not to the no-news stock-days in H2.
   - Prices come from `prices_v3.csv`, a yfinance download made on 2026-11-25, the analysis day.
   - If the two-way variance of a coefficient is not positive (possible with few clusters), the larger one-way variance is used and the row is flagged.
+- **2026-11-25, wording correction (no analysis changed):** section 2 says the tagger check uses headlines "labelled by hand". The 100 labels were drafted with an LLM and then reviewed and confirmed by the project owner, and the README describes them that way. The 70% threshold, the sample (100 random headlines, seed 2026) and the rule for withholding p-values are unchanged.

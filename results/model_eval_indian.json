@@ -13,7 +13,7 @@
   "caveat": "Labels were drafted with an LLM and reviewed and confirmed by the project owner, so they carry one reviewer's judgement and may be anchored on the LLM draft. None of the evaluated models saw these headlines in training or tuning. Small n: read the confidence intervals, not just the point estimates.",
   "results": [
     {
-      "subset": "indian_hand_labelled",
+      "subset": "indian_labelled",
       "key": "majority",
       "model": "majority (neutral)",
       "n": 150,
@@ -30,7 +30,7 @@
       ]
     },
     {
-      "subset": "indian_hand_labelled",
+      "subset": "indian_labelled",
       "key": "vader",
       "model": "VADER",
       "n": 150,
@@ -47,7 +47,7 @@
       ]
     },
     {
-      "subset": "indian_hand_labelled",
+      "subset": "indian_labelled",
       "key": "finbert",
       "model": "FinBERT",
       "n": 150,
@@ -64,7 +64,7 @@
       ]
     },
     {
-      "subset": "indian_hand_labelled",
+      "subset": "indian_labelled",
       "key": "zeroshot",
       "model": "Zero-shot (facebook/bart-large-mnli)",
       "n": 150,
@@ -86,7 +86,7 @@
     "swapped": 12,
     "results": [
       {
-        "subset": "indian_hand_labelled",
+        "subset": "indian_labelled",
         "key": "majority",
         "model": "majority (neutral)",
         "n": 150,
@@ -103,7 +103,7 @@
         ]
       },
       {
-        "subset": "indian_hand_labelled",
+        "subset": "indian_labelled",
         "key": "vader",
         "model": "VADER",
         "n": 150,
@@ -120,7 +120,7 @@
         ]
       },
       {
-        "subset": "indian_hand_labelled",
+        "subset": "indian_labelled",
         "key": "finbert",
         "model": "FinBERT",
         "n": 150,
@@ -137,7 +137,7 @@
         ]
       },
       {
-        "subset": "indian_hand_labelled",
+        "subset": "indian_labelled",
         "key": "zeroshot",
         "model": "Zero-shot (facebook/bart-large-mnli)",
         "n": 150,

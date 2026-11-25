@@ -11,7 +11,7 @@ Commands:
         Compare FinBERT, VADER and a majority baseline on Financial
         PhraseBank; writes model_eval.json and model_eval.md. With
         --labelled, instead compare majority, VADER, FinBERT and a zero-shot
-        model on a hand-labelled set; writes model_eval_indian.{json,md}.
+        model on a labelled set (labels drafted with an LLM, reviewed by the author); writes model_eval_indian.{json,md}.
         --alternatives reruns the scoring with borderline labels swapped.
     tagger-eval --labelled CSV [--alternatives CSV] [--out DIR]
         Check the rule-based event-type tagger against labelled headlines;
