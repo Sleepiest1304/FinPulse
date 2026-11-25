@@ -10,6 +10,9 @@ Commands:
     evaluate [--subsets ...] [--models ...] [--out DIR]
         Compare FinBERT, VADER and a majority baseline on Financial
         PhraseBank; writes model_eval.json and model_eval.md.
+    eventstudy --prices CSV --earnings CSV [--db PATH] [--out DIR] [--perm N]
+        Run the pre-registered v3 tests (docs/v3-preregistration.md) on
+        locally saved price and earnings files; writes v3_*.csv summaries.
 """
 from __future__ import annotations
 
@@ -79,6 +82,54 @@ def cmd_evaluate(args) -> int:
     return 0
 
 
+def cmd_eventstudy(args) -> int:
+    import pandas as pd
+
+    from finpulse import storage
+    from finpulse.eventstudy import build
+    from finpulse.v3tests import confirmatory, exploratory, robustness
+
+    heads = storage.load_headlines(path=args.db)
+    if heads.empty:
+        print("No headlines stored yet.")
+        return 1
+    prices = pd.read_csv(args.prices, parse_dates=["date"]).set_index("date")
+    earnings = pd.read_csv(args.earnings)
+    data = build(heads, prices, earnings)
+    ev, base = data["events"], data["base"]
+
+    conf = confirmatory(ev, base, n_perm=args.perm)
+    expl = exploratory(ev)
+    rob = robustness(ev, base, data["ar"].index, n_perm=min(args.perm, 2000))
+    tagged = data["tagged"]
+    counts = {
+        "headlines": int(len(heads)), "headlines_with_entry_day": int(len(tagged)),
+        "repeats": int((~tagged["novel"]).sum()), "multi_ticker": int(tagged["multi_ticker"].sum()),
+        "headline_types": tagged["event_type"].value_counts().to_dict(),
+        "events": int(len(ev)), "events_with_novel_score": int(ev["score"].notna().sum()),
+        "negative_events": int((ev["score"] < 0).sum()),
+        "near_earnings": int(ev["near_earnings"].sum()),
+        "events_with_surprise": int(ev["surprise"].notna().sum()),
+        "terciles": ev["tercile"].value_counts().to_dict(),
+        "no_news_stock_days": int(len(base)),
+        "surprise_reference": data["ref"], "permutations": args.perm,
+    }
+    args.out.mkdir(parents=True, exist_ok=True)
+    conf.to_csv(args.out / "v3_confirmatory.csv", index=False)
+    expl.to_csv(args.out / "v3_exploratory.csv", index=False)
+    rob.to_csv(args.out / "v3_robustness.csv", index=False)
+    (args.out / "v3_counts.json").write_text(json.dumps(counts, indent=2, default=float))
+
+    cols = ["id", "n", "estimate", "ci_lo", "ci_hi", "p_cluster", "p_perm", "p_adj", "note"]
+    with pd.option_context("display.width", 200, "display.max_colwidth", 70,
+                           "display.float_format", "{:.4f}".format):
+        print(json.dumps(counts, indent=2, default=float))
+        print(conf[cols].to_string(index=False))
+        print(expl[cols].to_string(index=False))
+        print(rob[["variant"] + cols].to_string(index=False))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m finpulse",
                                      description="FinPulse: Nifty 50 news sentiment.")
@@ -101,6 +152,14 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=["majority", "vader", "finbert"])
     p.add_argument("--out", type=Path, default=RESULTS_DIR)
     p.set_defaults(func=cmd_evaluate)
+
+    p = sub.add_parser("eventstudy", help="pre-registered v3 event study")
+    p.add_argument("--prices", type=Path, required=True, help="CSV: date + one column per ticker + ^NSEI")
+    p.add_argument("--earnings", type=Path, required=True, help="CSV from yfinance get_earnings_dates")
+    p.add_argument("--db", type=Path, default=DB_PATH)
+    p.add_argument("--out", type=Path, default=RESULTS_DIR)
+    p.add_argument("--perm", type=int, default=10_000, help="permutations per confirmatory test")
+    p.set_defaults(func=cmd_eventstudy)
     return parser
 
 

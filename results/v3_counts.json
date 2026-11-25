@@ -1,0 +1,37 @@
+{
+  "headlines": 398,
+  "headlines_with_entry_day": 398,
+  "repeats": 4,
+  "multi_ticker": 12,
+  "headline_types": {
+    "other": 226,
+    "earnings": 123,
+    "macro": 23,
+    "regulatory": 11,
+    "rumour": 8,
+    "management": 7
+  },
+  "events": 331,
+  "events_with_novel_score": 327,
+  "negative_events": 77,
+  "near_earnings": 75,
+  "events_with_surprise": 323,
+  "terciles": {
+    "middle": 125,
+    "top": 103,
+    "bottom": 95
+  },
+  "no_news_stock_days": 10026,
+  "surprise_reference": {
+    "winsor": [
+      -42.4125,
+      43.54499999999987
+    ],
+    "cuts": [
+      -3.6166666666666654,
+      4.136666666666674
+    ],
+    "n_releases": 228
+  },
+  "permutations": 10000
+}
