@@ -114,3 +114,10 @@ These tests can only detect large effects. Not rejecting the null does **not** s
   - The publisher suffix is removed only when the segment after the last " - " or " | " is 4 words or fewer. A longer tail is part of the headline.
   - Keywords also match their obvious inflections (results/result, fines/fined, appoints/appointed, misses/missed and so on). The full patterns are in `finpulse/events.py`.
   - A headline with no publish time and no fetch time is treated as novel.
+- **2026-11-25, step 3 clarifications (code written and tested on synthetic data only; no test run on real data yet):**
+  - Fundamentals use the most recent release that is available before D *and* has a reported surprise. Releases without a surprise (such as future dates) are skipped.
+  - The H1 permutation null shuffles the negative/non-negative labels within calendar month. It therefore asks whether negative events differ from same-month events in general, a slightly different question from "mean = 0", which the clustered test answers.
+  - The earnings exclusion applies to H1–H4 only, as stated in section 2. The exploratory tests S1–S14 keep events in the earnings window; otherwise S1/S6 (earnings type) would be empty.
+  - The 1/99 winsorising robustness check applies to event CARs, not to the no-news stock-days in H2.
+  - Prices come from `prices_v3.csv`, a yfinance download made on 2026-11-25, the analysis day.
+  - If the two-way variance of a coefficient is not positive (possible with few clusters), the larger one-way variance is used and the row is flagged.
