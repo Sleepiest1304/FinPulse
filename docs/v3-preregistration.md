@@ -110,4 +110,7 @@ These tests can only detect large effects. Not rejecting the null does **not** s
 
 ## Amendment log
 
-_None yet._
+- **2026-11-25, implementation clarifications (before any return was joined):**
+  - The publisher suffix is removed only when the segment after the last " - " or " | " is 4 words or fewer. A longer tail is part of the headline.
+  - Keywords also match their obvious inflections (results/result, fines/fined, appoints/appointed, misses/missed and so on). The full patterns are in `finpulse/events.py`.
+  - A headline with no publish time and no fetch time is treated as novel.
