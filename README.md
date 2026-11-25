@@ -24,6 +24,7 @@ Note the top row of the live analysis: FinBERT labels a fair-value *cut* as posi
 - **Dashboard** (`streamlit run app.py`, *Home* page): pick a stock, score its latest headlines live, optionally save them, and browse that stock's stored history.
 - **Backtest** (`python -m finpulse backtest`, *Backtest* page): per ticker and pooled, compares the daily mean sentiment score with the forward 1-day and 5-day returns. Reports Pearson and Spearman correlation, a rough t-statistic, hit rate, the always-up baseline and sample size.
 - **Model evaluation** (`python -m finpulse evaluate`, *Model Evaluation* page): compares FinBERT with VADER and a majority-class baseline on Financial PhraseBank (accuracy, macro F1, weighted F1). With `--labelled`, it compares them, plus a zero-shot NLI model, on labelled Indian headlines that none of the models were trained on. `--alternatives` reruns the scoring with borderline labels swapped.
+- **Event study** (`python -m finpulse eventstudy --prices CSV --earnings CSV`): runs the pre-registered v3 tests on abnormal returns, using locally saved price and earnings files. Those files are not in the repo.
 - **Event-type tagger check** (`python -m finpulse tagger-eval`): compares the rule-based event-type tagger with labelled headlines (accuracy, per-class precision and recall).
 
 ## Architecture
@@ -153,6 +154,40 @@ How to read this:
 
 The collector workflow refreshes these numbers in [`results/backtest_summary.csv`](results/backtest_summary.csv), including per-ticker rows, and the Backtest page computes them live. The table above records the first run and will not update itself.
 
+### Event study (v3, pre-registered)
+
+The question: does negative news mean something different for stocks whose latest earnings beat or missed expectations, and do post-news drops reverse over the following days? The hypotheses, windows, groups and tests were written down in [`docs/v3-preregistration.md`](docs/v3-preregistration.md) and committed before any test was run. Later clarifications are logged in that file's amendment log.
+
+**Method, briefly:**
+- **Abnormal returns:** stock return minus the Nifty 50 index return. CAR[a,b] sums these from trading day a to day b, where day 0 is the first trading day on which the headline could be acted on.
+- **Events:** an event is one stock-day of headlines, scored by FinBERT. Only novel headlines count; near-duplicates of the same stock's last 3 days are dropped. An event is "negative" if its mean score is below 0.
+- **Fundamentals:** the earnings surprise % from the most recent release that was public *before* day 0, so there is no look-ahead. Releases are split into terciles using cut-offs from all 228 releases in the sample.
+- **Earnings window:** events with an earnings date between day −1 and day 5 are left out of H1–H4, so the tests aren't just picking up the results announcement.
+- **Inference:** standard errors are clustered by date and by ticker, and each test also gets a within-month permutation test (10,000 shuffles). p-values are Holm-adjusted across H1–H4.
+
+**Data:** the database frozen at commit `6445562`: 398 headlines, 47 tickers, 331 stock-day events. 77 of the events were negative, and 75 events fell near an earnings date. Results: [`results/v3_confirmatory.csv`](results/v3_confirmatory.csv), with exploratory tests and robustness checks in `results/v3_exploratory.csv` and `results/v3_robustness.csv`.
+
+| Test | Question | n | Estimate [95% CI] | p (clustered) | p (permutation) | p (Holm) |
+|---|---|---:|---|---:|---:|---:|
+| H1 | Mean CAR[2,5] after negative events (reversion?) | 55 | +0.19 pp [−1.07, +1.45] | 0.76 | 0.68 | 0.76 |
+| H2 | Slope of CAR[2,5] on CAR[0,1]: negative events minus no-news days | 55 vs 9,536 | +0.48 [+0.05, +0.90] | 0.028 | 0.039 | 0.083 |
+| **H3** | CAR[0,1] after negative events: top minus bottom surprise tercile | 35 (19 / 16) | **+2.27 pp** [+1.17, +3.37] | 0.0003 | 0.0036 | **0.0013** |
+| H4 | CAR[2,5] after negative events: top minus bottom surprise tercile | 33 (17 / 16) | +2.29 pp [+0.05, +4.53] | 0.045 | 0.029 | 0.090 |
+
+How to read this:
+
+- **No reversion (H1, H2).** After negative news, days 2–5 show no measurable bounce-back: +0.19 pp, with an interval that comfortably includes zero. H2's slope points the other way from reversion: after negative events, the day 0–1 move tended to *continue* slightly more than on no-news days. That is not significant after the Holm correction.
+- **Fundamentals matter for the reaction (H3).** This is the only result that survives the correction. Negative news about a stock whose last results beat expectations went with a CAR[0,1] of **+1.06 pp** on average (19 events). For a stock whose last results missed, the figure was **−1.21 pp** (16 events), a gap of 2.27 pp. The gap holds when any single ticker is dropped (2.06 to 2.51 pp), and its CAR[2,5] counterpart (H4) points the same way, though H4 doesn't survive the correction.
+- **Exploratory tests** (Benjamini–Hochberg, q = 0.10): most event-type groups had fewer than 15 negative events, so they were reported as untested, as pre-registered. Negative earnings headlines (n = 21) showed nothing measurable. The sentiment score's slope on next-day and days 1–5 returns is close to zero (r = +0.01 and −0.07). The score × surprise interaction (S14) is significant (q = 0.015), but it uses the same data as H3, so it is not independent evidence.
+
+**Treat H3 as a hypothesis to test again, not a finding.** Reasons:
+- **The sample is small:** 35 events, 21 tickers, 31 dates.
+- **The result is fragile in the robustness checks.** With a stricter definition of "negative" (score ≤ −0.3), or one event per ticker per 5 trading days, the groups fall below 15 and the test cannot be run. With earnings-window events kept in, the gap shrinks to 1.44 pp (Holm p 0.084).
+- **It isn't specific to bad news.** A post-hoc check, not pre-registered, gives a top-minus-bottom gap of +0.94 pp for *non-negative* events too. So part of H3 may be a general post-earnings drift between beats and misses, rather than something specific to negative headlines.
+- **The news is noisy.** Many headlines in these groups are only loosely about the stock they are filed under.
+
+A fair test would use a fresh, later sample, for example the GDELT Indian-outlet headlines described above, with the same pre-registered rules. This is descriptive research, not a trading signal.
+
 ## Limitations
 
 - **Correlation is not prediction.** Even a statistically significant correlation in this setup would not mean you could trade on it profitably: transaction costs, slippage and multiple-testing across 50 tickers × 2 horizons are not accounted for.
@@ -160,6 +195,7 @@ The collector workflow refreshes these numbers in [`results/backtest_summary.csv
 - **Headline-only, off-domain model.** FinBERT reads only titles, truncated to 128 tokens, and was fine-tuned on English financial news about Finnish companies (Financial PhraseBank), not Indian market news.
 - **Small, LLM-assisted label sets.** The Indian-headline comparison uses 150 headlines and the tagger check uses 100, so the confidence intervals are wide (about ±0.08 on accuracy). Both sets were drafted with an LLM and reviewed and confirmed by the project owner. That is one reviewer, with no inter-annotator agreement measured, and the review may be anchored on the LLM's draft. The labelled files hold third-party headline text and are not in this repository. Results from a single label pass should be treated as indicative only.
 - **FinBERT's training data.** FinBERT was fine-tuned on Financial PhraseBank, so its PhraseBank scores are in-sample. The Indian-headline set is the out-of-sample check, and FinBERT's accuracy drops from 0.89–0.97 there to 0.70.
+- **Event study power.** The pre-registered power calculation assumed about 70 negative events and put the smallest reliably detectable mean CAR[2,5] at about 1.1 pp. Only 55 remained after exclusions, so the real threshold is higher. Smaller reversions would be missed, so the H1 null result does not rule out a small effect. The earnings surprises come from Yahoo Finance and have not been checked against exchange filings.
 - **Pooled observations are not independent.** Stocks move together, so the t-statistic is a rough guide, not a valid p-value.
 - **Survivorship and membership drift.** The ticker list in `finpulse/config.py` is a snapshot of current Nifty 50 members and is not point-in-time.
 - **Ephemeral storage on Streamlit Cloud.** Headlines saved from the deployed app's *Save* checkbox are lost when the app restarts. Lasting history comes from the GitHub Action.
