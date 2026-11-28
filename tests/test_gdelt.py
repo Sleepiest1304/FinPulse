@@ -149,3 +149,12 @@ def test_pull_resumes_without_refetching_or_double_counting(tmp_path):
     assert {r["status"] for r in manifest.values()} == {"ok"}
     recs = gdelt.load_records(tmp_path)
     assert len(recs) == 3 * 4 and recs["record_id"].is_unique
+
+
+def test_pull_checks_done_files_once(tmp_path, monkeypatch):
+    calls = []
+    real = gdelt.done_files
+    monkeypatch.setattr(gdelt, "done_files", lambda cache: calls.append(1) or real(cache))
+    gdelt.pull("20261015073000", "20261015080000", tmp_path, workers=1, pause=0,
+               fetch=lambda url, t: zipped(SAMPLE), log=lambda m: None)
+    assert len(calls) == 1          # not once per timestamp

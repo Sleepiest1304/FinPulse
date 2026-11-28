@@ -160,6 +160,7 @@ def read_manifest(path: Path) -> dict[str, dict]:
 
 
 def done_files(cache: Path) -> set[str]:
+    cache = Path(cache)
     rows = read_manifest(cache / "manifest.csv")
     return {f for f, r in rows.items()
             if r["status"] in DONE and (cache / "records" / f"{f}.csv.gz").exists()}
@@ -215,8 +216,9 @@ def pull(start: str, end: str, cache: Path, workers: int = 3, pause: float = 0.5
     (cache / "records").mkdir(parents=True, exist_ok=True)
     manifest = cache / "manifest.csv"
     new_manifest = not manifest.exists()
-    todo = [ts for ts in gkg_timestamps(start, end) if ts not in done_files(cache)]
-    log(f"{len(todo)} files to fetch ({len(gkg_timestamps(start, end)) - len(todo)} already done)")
+    wanted, done = gkg_timestamps(start, end), done_files(cache)
+    todo = [ts for ts in wanted if ts not in done]
+    log(f"{len(todo)} files to fetch ({len(wanted) - len(todo)} already done)")
 
     lock = threading.Lock()
     stats = {"done": 0, "skipped": 0, "bytes": 0, "indian": 0}
