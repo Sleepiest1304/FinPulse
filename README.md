@@ -207,7 +207,7 @@ FinPulse/
 ├── app.py                     # Streamlit entry point: sidebar navigation only
 ├── finpulse/                  # core library (no Streamlit imports)
 │   ├── __main__.py            # enables `python -m finpulse`
-│   ├── cli.py                 # collect | backtest | evaluate commands
+│   ├── cli.py                 # all commands (collect, backtest, evaluate, eventstudy, ...)
 │   ├── config.py              # Nifty 50 tickers, paths, input validation
 │   ├── news.py                # Yahoo headlines, schema-tolerant parsing
 │   ├── prices.py              # Yahoo daily closes
@@ -216,17 +216,24 @@ FinPulse/
 │   ├── storage.py             # SQLite persistence
 │   ├── collect.py             # one fetch → score → store pass
 │   ├── backtest.py            # no-look-ahead alignment + statistics
-│   └── evaluation.py          # metrics, PhraseBank loader, model comparison
+│   ├── evaluation.py          # model comparison and event-tagger check
+│   ├── novelty.py             # headline de-duplication
+│   ├── events.py              # rule-based event-type tagger
+│   ├── eventstudy.py          # abnormal returns, events, point-in-time surprise
+│   ├── stats.py               # clustered OLS, p-values, multiple-testing corrections
+│   ├── v3tests.py             # pre-registered v3 tests
+│   ├── gdelt.py               # resumable GDELT pull, Nifty 50 name matching
+│   └── replication.py         # pre-registered H3 replication
 ├── ui/                        # Streamlit layer, depends on finpulse/
 │   ├── cache.py               # st.cache wrappers around finpulse calls
 │   └── pages/
 │       ├── home.py            # live scoring + stored history
 │       ├── backtest.py        # sentiment vs forward returns
 │       └── model_evaluation.py
-├── tests/                     # one test file per finpulse module; network mocked
+├── tests/                     # tests for every finpulse module; network mocked
 ├── data/finpulse.db           # headline history, committed by the collector
-├── results/                   # backtest CSVs and model evaluation output
-├── docs/screenshots/
+├── results/                   # backtest, model evaluation and v3 summary tables
+├── docs/                      # v3 pre-registration, screenshots
 ├── .github/workflows/         # ci.yml, collect.yml, evaluate.yml
 ├── pyproject.toml             # tool config (pytest)
 ├── requirements.txt           # runtime deps (also used by Streamlit Cloud)

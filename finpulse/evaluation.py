@@ -96,52 +96,9 @@ def metrics(name: str, y_true: list[str], y_pred: list[str]) -> dict:
             "weighted_f1": weighted_f1(y_true, y_pred)}
 
 
-def evaluate(subsets=("allagree", "50agree"), models=("majority", "vader", "finbert"),
-             loader=None) -> list[dict]:
-    """Score each model on each Financial PhraseBank subset.
-
-    VADER needs ``vaderSentiment`` (requirements-dev.txt); FinBERT needs torch.
-    ``loader`` defaults to ``load_phrasebank`` and is injectable for tests.
-    """
-    loader = loader or load_phrasebank
-    if "vader" in models:
-        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-        vader = SentimentIntensityAnalyzer()
-    if "finbert" in models:
-        from finpulse.sentiment import get_sentiment
-
-    rows = []
-    for subset in subsets:
-        texts, y = loader(subset)
-        print(f"{subset}: {len(texts)} sentences {dict(Counter(y))}")
-        majority = Counter(y).most_common(1)[0][0]
-        if "majority" in models:
-            rows.append({"subset": subset,
-                         **metrics(f"majority ({majority})", y, [majority] * len(y))})
-        if "vader" in models:
-            preds = [vader_label(vader.polarity_scores(t)["compound"]) for t in texts]
-            rows.append({"subset": subset, **metrics("VADER", y, preds)})
-        if "finbert" in models:
-            preds = [r["label"] for r in get_sentiment(texts)]
-            rows.append({"subset": subset, **metrics("FinBERT", y, preds)})
-    return rows
-
-
-def to_markdown(rows: list[dict]) -> str:
-    lines = ["| Subset | Model | n | Accuracy | Macro F1 | Weighted F1 |",
-             "|---|---|---:|---:|---:|---:|"]
-    lines += [f"| {r['subset']} | {r['model']} | {r['n']} | {r['accuracy']:.3f} | "
-              f"{r['macro_f1']:.3f} | {r['weighted_f1']:.3f} |" for r in rows]
-    return "\n".join(lines)
-
-
-# ------------------------------------------------------------ labelled set (LLM-drafted, author-reviewed)
 ZEROSHOT_MODEL = "facebook/bart-large-mnli"
 ZEROSHOT_TEMPLATE = "The sentiment of this financial news headline is {}."
-LABELLED_CAVEAT = ("Labels were drafted with an LLM and reviewed and confirmed by the "
-                   "project owner, so they carry one reviewer's judgement and may be anchored on "
-                   "the LLM draft. None of the evaluated models saw these headlines in training "
-                   "or tuning. Small n: read the confidence intervals, not just the point estimates.")
+MODEL_NAMES = {"vader": "VADER", "finbert": "FinBERT", "zeroshot": f"Zero-shot ({ZEROSHOT_MODEL})"}
 
 
 def zeroshot_labels(texts: list[str], model: str = ZEROSHOT_MODEL, batch_size: int = 16) -> list[str]:
@@ -155,6 +112,65 @@ def zeroshot_labels(texts: list[str], model: str = ZEROSHOT_MODEL, batch_size: i
               hypothesis_template=ZEROSHOT_TEMPLATE, batch_size=batch_size)
     out = [out] if isinstance(out, dict) else out
     return [r["labels"][0] for r in out]
+
+
+def predict(texts, models, predictors=None) -> dict[str, list[str]]:
+    """Labels from each model in ``models`` except the majority baseline.
+
+    VADER needs ``vaderSentiment`` (requirements-dev.txt); FinBERT and the
+    zero-shot model need torch. ``predictors`` (key -> callable) is for tests.
+    """
+    predictors = dict(predictors or {})
+    if "vader" in models and "vader" not in predictors:
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        sia = SentimentIntensityAnalyzer()
+        predictors["vader"] = lambda ts: [vader_label(sia.polarity_scores(t)["compound"]) for t in ts]
+    if "finbert" in models and "finbert" not in predictors:
+        from finpulse.sentiment import get_sentiment
+        predictors["finbert"] = lambda ts: [r["label"] for r in get_sentiment(ts)]
+    if "zeroshot" in models and "zeroshot" not in predictors:
+        predictors["zeroshot"] = zeroshot_labels
+    return {k: list(predictors[k](texts)) for k in models if k != "majority"}
+
+
+def _named(key: str, y, predictions) -> tuple[str, list[str]]:
+    if key == "majority":
+        majority = Counter(y).most_common(1)[0][0]
+        return f"majority ({majority})", [majority] * len(y)
+    return MODEL_NAMES.get(key, key), predictions[key]
+
+
+def evaluate(subsets=("allagree", "50agree"), models=("majority", "vader", "finbert"),
+             loader=None, predictors=None) -> list[dict]:
+    """Score each model on each Financial PhraseBank subset.
+
+    ``loader`` defaults to ``load_phrasebank`` and is injectable for tests.
+    """
+    loader = loader or load_phrasebank
+    rows = []
+    for subset in subsets:
+        texts, y = loader(subset)
+        print(f"{subset}: {len(texts)} sentences {dict(Counter(y))}")
+        preds = predict(texts, models, predictors)
+        for key in models:
+            name, p = _named(key, y, preds)
+            rows.append({"subset": subset, **metrics(name, y, p)})
+    return rows
+
+
+def to_markdown(rows: list[dict]) -> str:
+    lines = ["| Subset | Model | n | Accuracy | Macro F1 | Weighted F1 |",
+             "|---|---|---:|---:|---:|---:|"]
+    lines += [f"| {r['subset']} | {r['model']} | {r['n']} | {r['accuracy']:.3f} | "
+              f"{r['macro_f1']:.3f} | {r['weighted_f1']:.3f} |" for r in rows]
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------ labelled set (LLM-drafted, author-reviewed)
+LABELLED_CAVEAT = ("Labels were drafted with an LLM and reviewed and confirmed by the "
+                   "project owner, so they carry one reviewer's judgement and may be anchored on "
+                   "the LLM draft. None of the evaluated models saw these headlines in training "
+                   "or tuning. Small n: read the confidence intervals, not just the point estimates.")
 
 
 def bootstrap_ci(y_true, y_pred, metric, n_boot: int = 2000, seed: int = 2026,
@@ -173,34 +189,20 @@ def bootstrap_ci(y_true, y_pred, metric, n_boot: int = 2000, seed: int = 2026,
     return float(np.quantile(vals, a)), float(np.quantile(vals, 1 - a))
 
 
-def load_labelled_frame(path: Path, rebuild=None):
-    """Read ``record_id,label[,title]``; missing titles are rebuilt from GDELT.
+def load_labelled(path: Path):
+    """Read a ``record_id,title,label`` CSV (kept outside the repo).
 
-    Returns the usable rows (record_id, title, label) and the number dropped
-    (unknown label, or no title).
+    Returns the usable rows and the number dropped (unknown label or no title).
     """
     import pandas as pd
 
     df = pd.read_csv(path, dtype=str)
-    if "record_id" not in df or "label" not in df:
-        raise ValueError("labelled file needs record_id and label columns")
+    missing = {"record_id", "title", "label"} - set(df.columns)
+    if missing:
+        raise ValueError(f"labelled file is missing columns: {sorted(missing)}")
     df["label"] = df["label"].str.strip().str.lower()
-    if "title" not in df:
-        df["title"] = None
-    missing = df["title"].isna()
-    if missing.any():
-        if rebuild is None:
-            from finpulse.gdelt import rebuild_titles as rebuild
-        found = rebuild(df.loc[missing, "record_id"].tolist())
-        df.loc[missing, "title"] = df.loc[missing, "record_id"].map(found)
     ok = df["label"].isin(LABELS) & df["title"].notna()
     return df.loc[ok, ["record_id", "title", "label"]].reset_index(drop=True), int((~ok).sum())
-
-
-def load_labelled(path: Path, rebuild=None) -> tuple[list[str], list[str], int]:
-    """Texts, labels and the number of rows dropped (see ``load_labelled_frame``)."""
-    df, dropped = load_labelled_frame(path, rebuild)
-    return df["title"].tolist(), df["label"].tolist(), dropped
 
 
 def apply_alternatives(df, audit, sheet: str, keys: list[str], label_col: str,
@@ -228,47 +230,16 @@ def apply_alternatives(df, audit, sheet: str, keys: list[str], label_col: str,
     return out, len(rows)
 
 
-MODEL_NAMES = {"vader": "VADER", "finbert": "FinBERT", "zeroshot": f"Zero-shot ({ZEROSHOT_MODEL})"}
-
-
-def predict_labelled(texts, models, predictors=None) -> dict[str, list[str]]:
-    """Predictions of each non-baseline model.
-
-    ``predictors`` maps model key -> callable(texts) -> labels, for tests.
-    """
-    predictors = dict(predictors or {})
-    if "vader" in models and "vader" not in predictors:
-        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-        sia = SentimentIntensityAnalyzer()
-        predictors["vader"] = lambda ts: [vader_label(sia.polarity_scores(t)["compound"]) for t in ts]
-    if "finbert" in models and "finbert" not in predictors:
-        from finpulse.sentiment import get_sentiment
-        predictors["finbert"] = lambda ts: [r["label"] for r in get_sentiment(ts)]
-    if "zeroshot" in models and "zeroshot" not in predictors:
-        predictors["zeroshot"] = zeroshot_labels
-    return {k: list(predictors[k](texts)) for k in models if k != "majority"}
-
-
 def score_labelled(y, models, predictions) -> list[dict]:
     """Metrics with bootstrap CIs; ``majority`` predicts the most common label in ``y``."""
     rows = []
-    majority = Counter(y).most_common(1)[0][0]
     for key in models:
-        if key == "majority":
-            name, preds = f"majority ({majority})", [majority] * len(y)
-        else:
-            name, preds = MODEL_NAMES.get(key, key), predictions[key]
+        name, preds = _named(key, y, predictions)
         row = {"subset": "indian_labelled", "key": key, **metrics(name, y, preds)}
         row["accuracy_ci"] = bootstrap_ci(y, preds, accuracy)
         row["macro_f1_ci"] = bootstrap_ci(y, preds, macro_f1)
         rows.append(row)
     return rows
-
-
-def evaluate_labelled(texts, y, models=("majority", "vader", "finbert", "zeroshot"),
-                      predictors=None) -> list[dict]:
-    """Compare models on a labelled set (LLM-drafted, author-reviewed), with bootstrap CIs."""
-    return score_labelled(y, models, predict_labelled(texts, models, predictors))
 
 
 def ranking(rows: list[dict], metric: str) -> list[str]:

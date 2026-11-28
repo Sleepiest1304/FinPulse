@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import string
 import unicodedata
+from collections import deque
 
 import pandas as pd
 
@@ -70,14 +71,15 @@ def mark_novelty(headlines: pd.DataFrame) -> pd.DataFrame:
     df["novel"] = True
 
     for _, g in df.sort_values("_ts").groupby("ticker", sort=False):
-        seen: list[tuple[pd.Timestamp, frozenset]] = []
-        for idx, row in g.iterrows():
-            ts, tok = row["_ts"], row["_tok"]
-            if pd.notna(ts):
-                if any(ts - prev_ts <= WINDOW and jaccard(tok, prev_tok) >= THRESHOLD
-                       for prev_ts, prev_tok in seen):
-                    df.at[idx, "novel"] = False
-                seen.append((ts, tok))
+        seen: deque[tuple[pd.Timestamp, frozenset]] = deque()   # earlier headlines, oldest first
+        for idx, ts, tok in zip(g.index, g["_ts"], g["_tok"]):
+            if pd.isna(ts):
+                continue
+            while seen and ts - seen[0][0] > WINDOW:   # rows are in time order: drop what is out of range
+                seen.popleft()
+            if any(jaccard(tok, prev_tok) >= THRESHOLD for _, prev_tok in seen):
+                df.at[idx, "novel"] = False
+            seen.append((ts, tok))
 
     norm = df["title"].map(normalise_title)
     day = df["_ts"].dt.tz_convert(IST).dt.date

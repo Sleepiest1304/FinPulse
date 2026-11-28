@@ -5,8 +5,8 @@ import pytest
 
 from finpulse import cli
 from finpulse.evaluation import (accuracy, apply_alternatives, bootstrap_ci, compare_rankings,
-                                 evaluate_labelled, evaluate_tagger, load_labelled,
-                                 precision_recall, tagger_markdown, to_markdown_ci)
+                                 evaluate_tagger, load_labelled, precision_recall, predict,
+                                 score_labelled, tagger_markdown, to_markdown_ci)
 
 
 def test_bootstrap_ci_brackets_point_estimate():
@@ -17,21 +17,21 @@ def test_bootstrap_ci_brackets_point_estimate():
     assert bootstrap_ci(y, y, accuracy, n_boot=100) == (1.0, 1.0)
 
 
-def test_load_labelled_rebuilds_missing_titles_and_drops_bad_rows(tmp_path):
+def test_load_labelled_normalises_and_drops_bad_rows(tmp_path):
     f = tmp_path / "l.csv"
-    pd.DataFrame({"record_id": ["20261015073000-1", "20261015073000-2", "20261015073000-3",
-                                "20261015073000-4"],
-                  "label": ["Positive", "negative", "unsure", "neutral"]}).to_csv(f, index=False)
-    rebuilt = {"20261015073000-1": "A up", "20261015073000-2": "B down", "20261015073000-3": "C"}
-    texts, y, dropped = load_labelled(f, rebuild=lambda ids: {i: rebuilt[i] for i in ids if i in rebuilt})
-    assert texts == ["A up", "B down"] and y == ["positive", "negative"]
-    assert dropped == 2      # bad label, and a record GDELT no longer returns
+    pd.DataFrame({"record_id": ["1", "2", "3", "4"],
+                  "title": ["A up", "B down", "C", None],
+                  "label": ["Positive", " negative", "unsure", "neutral"]}).to_csv(f, index=False)
+    df, dropped = load_labelled(f)
+    assert df["title"].tolist() == ["A up", "B down"]
+    assert df["label"].tolist() == ["positive", "negative"]
+    assert dropped == 2      # an unknown label, and a row with no title
 
 
 def test_load_labelled_requires_columns(tmp_path):
     f = tmp_path / "l.csv"
-    pd.DataFrame({"title": ["x"]}).to_csv(f, index=False)
-    with pytest.raises(ValueError):
+    pd.DataFrame({"record_id": ["1"], "label": ["positive"]}).to_csv(f, index=False)
+    with pytest.raises(ValueError, match="title"):
         load_labelled(f)
 
 
@@ -44,8 +44,8 @@ def fake_predictors():
 def test_evaluate_labelled_rows_and_markdown():
     texts = ["A up", "B down", "C up", "D down", "E flat"]
     y = ["positive", "negative", "positive", "negative", "neutral"]
-    rows = evaluate_labelled(texts, y, ["majority", "vader", "finbert", "zeroshot"],
-                             predictors=fake_predictors())
+    models = ["majority", "vader", "finbert", "zeroshot"]
+    rows = score_labelled(y, models, predict(texts, models, fake_predictors()))
     by = {r["model"].split(" (")[0]: r for r in rows}
     assert by["FinBERT"]["accuracy"] == pytest.approx(0.8)
     assert by["Zero-shot"]["accuracy"] == pytest.approx(0.4)
@@ -55,8 +55,8 @@ def test_evaluate_labelled_rows_and_markdown():
 
 def patch_predictors(monkeypatch):
     import finpulse.evaluation as ev
-    real = ev.predict_labelled
-    monkeypatch.setattr(ev, "predict_labelled",
+    real = ev.predict
+    monkeypatch.setattr(ev, "predict",
                         lambda texts, models: real(texts, models, predictors=fake_predictors()))
 
 

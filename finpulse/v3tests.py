@@ -63,6 +63,27 @@ def _diff_means_fast(y, g):
     return a.mean() - b.mean() if len(a) and len(b) else np.nan
 
 
+H3_QUESTION = "CAR[0,1] after negative events: top minus bottom surprise tercile"
+
+
+def tercile_difference(ev, col, tid, question, rng, n_perm, family="confirmatory"):
+    """Top minus bottom surprise tercile in ``col`` among ``ev`` rows with ``neg`` set.
+
+    The H3/H4 test: clustered OLS on a top dummy plus the within-month
+    permutation. Groups below MIN_GROUP are skipped, not tested.
+    """
+    t = ev[ev["neg"] & ev["tercile"].isin(["top", "bottom"])].dropna(subset=[col])
+    top = (t["tercile"] == "top").values
+    if top.sum() < MIN_GROUP or (~top).sum() < MIN_GROUP:
+        return _skip(tid, family, question, len(t),
+                     f"n too small (top {int(top.sum())}, bottom {int((~top).sum())})")
+    res = _fit(t[col], np.column_stack([np.ones(len(t)), top.astype(float)]), t)
+    y, m = t[col].values, _months(t)
+    null = np.array([_diff_means_fast(y, _shuffle_within(top, m, rng)) for _ in range(n_perm)])
+    return _row(tid, family, question, t, res, 1, _perm_p(float(res.coef[1]), null),
+                f"top {int(top.sum())}, bottom {int((~top).sum())}")
+
+
 # ---------------------------------------------------------------- confirmatory
 def confirmatory(events, base, threshold=NEG_THRESHOLD, exclude_earnings=True,
                  n_perm=N_PERM, seed=SEED, car_clip=None):
@@ -117,19 +138,9 @@ def confirmatory(events, base, threshold=NEG_THRESHOLD, exclude_earnings=True,
                          f"{len(nn)} negative events vs {len(b)} no-news stock-days"))
 
     # H3 / H4: top minus bottom surprise tercile among negative events.
-    for tid, col, q in (("H3", "car_0_1", "CAR[0,1] after negative events: top minus bottom surprise tercile"),
+    for tid, col, q in (("H3", "car_0_1", H3_QUESTION),
                         ("H4", "car_2_5", "CAR[2,5] after negative events: top minus bottom surprise tercile")):
-        t = ev[ev["neg"] & ev["tercile"].isin(["top", "bottom"])].dropna(subset=[col])
-        top = (t["tercile"] == "top").values
-        if top.sum() < MIN_GROUP or (~top).sum() < MIN_GROUP:
-            rows.append(_skip(tid, "confirmatory", q, len(t),
-                              f"n too small (top {int(top.sum())}, bottom {int((~top).sum())})"))
-            continue
-        res = _fit(t[col], np.column_stack([np.ones(len(t)), top.astype(float)]), t)
-        y, m = t[col].values, _months(t)
-        null = np.array([_diff_means_fast(y, _shuffle_within(top, m, rng)) for _ in range(n_perm)])
-        rows.append(_row(tid, "confirmatory", q, t, res, 1, _perm_p(float(res.coef[1]), null),
-                         f"top {int(top.sum())}, bottom {int((~top).sum())}"))
+        rows.append(tercile_difference(ev, col, tid, q, rng, n_perm))
 
     out = pd.DataFrame(rows)
     out["p_adj"] = holm(out["p_cluster"].values)

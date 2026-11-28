@@ -1,5 +1,8 @@
+import csv
+import gzip
 import io
 import zipfile
+from urllib.error import HTTPError
 
 import pytest
 
@@ -48,66 +51,101 @@ def test_every_nifty_ticker_has_an_alias():
     assert set(gdelt.ALIASES) == set(NIFTY50)
 
 
-def test_parse_gkg_extracts_titles_and_unescapes():
-    df = gdelt.parse_gkg(SAMPLE)
-    assert len(df) == 5                       # the record without a title is dropped
-    assert df.loc[df["record_id"] == "20261015073000-3", "title"].item() == \
-        "Tom Cruise reacts to 'Attack on Titan'"
-    assert str(df["date"].dt.tz) == "UTC"
-
-
-def test_indian_financial_filter():
-    out = gdelt.indian_financial(gdelt.parse_gkg(SAMPLE))
-    # Reuters is not Indian; the film story names no company and is not a business URL.
-    assert out["record_id"].tolist() == ["20261015073000-1", "20261015073000-2", "20261015073000-5"]
-    assert out.set_index("record_id").loc["20261015073000-1", "tickers"] == "INFY.NS,TCS.NS"
-    assert out.set_index("record_id").loc["20261015073000-5", "business"]
-
-
-def test_download_validates_timestamp():
-    with pytest.raises(ValueError):
-        gdelt.download_gkg.__wrapped__("2026101507") if hasattr(gdelt.download_gkg, "__wrapped__") \
-            else gdelt.download_gkg("2026101507")
-
-
-def test_download_reads_zip(monkeypatch):
+def zipped(text, name="x.gkg.csv"):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("20261015073000.gkg.csv", SAMPLE)
-
-    class Resp(io.BytesIO):
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    seen = {}
-
-    def fake_urlopen(req, timeout):
-        seen["url"] = req.full_url
-        return Resp(buf.getvalue())
-
-    monkeypatch.setattr(gdelt, "urlopen", fake_urlopen)
-    text = gdelt.download_gkg("20261015073000")
-    assert "Wipro" in text
-    assert seen["url"].endswith("/gdeltv2/20261015073000.gkg.csv.zip")
+        zf.writestr(name, text)
+    return buf.getvalue()
 
 
-def test_rebuild_titles_groups_by_file():
+def test_timestamps_cover_range_inclusive():
+    ts = gdelt.gkg_timestamps("20260101000000", "20260101010000")
+    assert ts == ["20260101000000", "20260101001500", "20260101003000",
+                  "20260101004500", "20260101010000"]
+    assert len(gdelt.gkg_timestamps("20260101000000", "20261124234500")) == 328 * 96
+    with pytest.raises(ValueError):
+        gdelt.gkg_timestamps("20260101000700", "20260101010000")
+
+
+def test_indian_records_keeps_titled_indian_outlet_records():
+    total, rows = gdelt.indian_records(SAMPLE)
+    assert total == 6                                   # every record, titled or not
+    # Reuters is not an Indian outlet, and record 6 has no title.
+    assert [r[0] for r in rows] == ["20261015073000-1", "20261015073000-2",
+                                    "20261015073000-3", "20261015073000-5"]
+    assert rows[2][4] == "Tom Cruise reacts to 'Attack on Titan'"   # HTML entities unescaped
+    assert rows[3][2] == "economictimes.indiatimes.com"
+
+
+def test_indian_records_survives_quote_at_field_start():
+    line = gkg_line("20261015073000-9", "livemint.com", "https://www.livemint.com/x",
+                    'TCS "gains" today')
+    line = line.replace("\t1\t", '\t"1\t', 1)           # a stray quote that would trip csv
+    total, rows = gdelt.indian_records(line + "\n" + SAMPLE)
+    assert total == 7 and rows[0][4] == 'TCS "gains" today'
+
+
+def read_records(cache, ts):
+    with gzip.open(cache / "records" / f"{ts}.csv.gz", "rt", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def test_process_file_writes_records_and_manifest_row(tmp_path):
+    (tmp_path / "records").mkdir()
+    data = zipped(SAMPLE)
+    row = gdelt.process_file("20261015073000", tmp_path, fetch=lambda url, t: data)
+    assert row["status"] == "ok" and row["records"] == 6 and row["indian_records"] == 4
+    assert row["compressed_bytes"] == len(data) and len(row["sha256"]) == 64
+    assert len(read_records(tmp_path, "20261015073000")) == 4
+
+
+def test_process_file_retries_then_skips(tmp_path):
+    (tmp_path / "records").mkdir()
     calls = []
 
-    def fetch(ts):
-        calls.append(ts)
-        return SAMPLE
+    def flaky(url, timeout):
+        calls.append(url)
+        if len(calls) < 2:
+            raise TimeoutError("slow")
+        return zipped(SAMPLE)
 
-    got = gdelt.rebuild_titles(["20261015073000-2", "20261015073000-5", "20261015073000-99"], fetch)
-    assert calls == ["20261015073000"]
-    assert got == {"20261015073000-2": "Wipro Q2 profit slips slightly YoY to Rs 3,201 crore",
-                   "20261015073000-5": "Rupee ends flat"}
+    row = gdelt.process_file("20261015073000", tmp_path, fetch=flaky, sleep=lambda s: None)
+    assert row["status"] == "retried" and row["attempts"] == 2
+
+    def broken(url, timeout):
+        raise ConnectionError("down")
+    row = gdelt.process_file("20261015074500", tmp_path, fetch=broken, sleep=lambda s: None)
+    assert row["status"] == "skipped" and row["attempts"] == 3 and "down" in row["error"]
+
+    def missing(url, timeout):
+        raise HTTPError(url, 404, "Not Found", None, None)
+    row = gdelt.process_file("20261015080000", tmp_path, fetch=missing, sleep=lambda s: None)
+    assert row["status"] == "skipped" and row["attempts"] == 1
 
 
-def test_record_timestamp_rejects_bad_ids():
-    assert gdelt.record_timestamp("20261015073000-12") == "20261015073000"
-    with pytest.raises(ValueError):
-        gdelt.record_timestamp("abc-1")
+def test_pull_resumes_without_refetching_or_double_counting(tmp_path):
+    fetched = []
+    fail_once = {"20261015074500"}
+
+    def fetch(url, timeout):
+        ts = url.rsplit("/", 1)[-1][:14]
+        fetched.append(ts)
+        if ts in fail_once:
+            raise HTTPError(url, 404, "Not Found", None, None)
+        return zipped(SAMPLE.replace("20261015073000-", f"{ts}-"))
+
+    run = dict(cache=tmp_path, workers=2, pause=0, fetch=fetch, log=lambda m: None)
+    s1 = gdelt.pull("20261015073000", "20261015080000", **run)
+    assert s1["done"] == 3 and s1["skipped"] == 1 and s1["skipped_total"] == 1
+    assert sorted(fetched) == ["20261015073000", "20261015074500", "20261015080000"]
+
+    fetched.clear()
+    fail_once.clear()
+    s2 = gdelt.pull("20261015073000", "20261015080000", **run)
+    assert fetched == ["20261015074500"]               # only the skipped file is tried again
+    assert s2["skipped_total"] == 0
+
+    manifest = gdelt.read_manifest(tmp_path / "manifest.csv")
+    assert {r["status"] for r in manifest.values()} == {"ok"}
+    recs = gdelt.load_records(tmp_path)
+    assert len(recs) == 3 * 4 and recs["record_id"].is_unique

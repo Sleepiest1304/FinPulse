@@ -11,14 +11,21 @@ Commands:
         Compare FinBERT, VADER and a majority baseline on Financial
         PhraseBank; writes model_eval.json and model_eval.md. With
         --labelled, instead compare majority, VADER, FinBERT and a zero-shot
-        model on a labelled set (labels drafted with an LLM, reviewed by the author); writes model_eval_indian.{json,md}.
-        --alternatives reruns the scoring with borderline labels swapped.
+        model on a labelled set (labels drafted with an LLM, reviewed by the
+        author); writes model_eval_indian.{json,md}. --alternatives reruns the
+        scoring with borderline labels swapped.
     tagger-eval --labelled CSV [--alternatives CSV] [--out DIR]
         Check the rule-based event-type tagger against labelled headlines;
         writes event_tagger_eval.{json,md}.
     eventstudy --prices CSV --earnings CSV [--db PATH] [--out DIR] [--perm N]
         Run the pre-registered v3 tests (docs/v3-preregistration.md) on
         locally saved price and earnings files; writes v3_*.csv summaries.
+    gdelt-pull --cache DIR [--start TS] [--end TS] [--workers N]
+        Resumable pull of Indian-outlet GDELT GKG records into a cache outside
+        the repository, with a per-file manifest.
+    replicate-h3 --cache DIR --prices CSV --earnings CSV --scores CSV [--run]
+        Report the H3 replication counts; with --run, run the registered test
+        once and write v3_replication*.
 """
 from __future__ import annotations
 
@@ -97,7 +104,7 @@ def _evaluate_labelled(args) -> int:
 
     from finpulse import evaluation as ev
 
-    df, dropped = ev.load_labelled_frame(args.labelled)
+    df, dropped = ev.load_labelled(args.labelled)
     if df.empty:
         print("No usable labelled headlines.")
         return 1
@@ -106,7 +113,7 @@ def _evaluate_labelled(args) -> int:
     models = ["majority"] + models if "majority" in args.models else models
     if args.models == ["majority", "vader", "finbert"]:   # default: include zero-shot too
         models.append("zeroshot")
-    preds = ev.predict_labelled(texts, models)
+    preds = ev.predict(texts, models)
     rows = ev.score_labelled(y, models, preds)
     out = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
            "dataset": f"{args.labelled.name}: GDELT headlines from Indian outlets",
@@ -210,6 +217,87 @@ def cmd_eventstudy(args) -> int:
     return 0
 
 
+def cmd_gdelt_pull(args) -> int:
+    from finpulse.gdelt import pull
+
+    if args.cache.resolve().is_relative_to(Path(__file__).resolve().parents[1]):
+        print("Refusing to cache GDELT data inside the repository; pass a --cache outside it.")
+        return 2
+    stats = pull(args.start, args.end, args.cache, workers=args.workers, pause=args.pause,
+                 progress_every=args.progress_every)
+    print(f"done: {stats['done']} files this run, {stats['skipped_total']} skipped in total "
+          f"(rerun to retry them)")
+    return 0
+
+
+def cmd_replicate_h3(args) -> int:
+    import pandas as pd
+
+    from finpulse import replication as rp
+    from finpulse.gdelt import done_files, load_records, read_manifest
+
+    repo = Path(__file__).resolve().parents[1]
+    if any(p.resolve().is_relative_to(repo) for p in (args.cache, args.scores)):
+        print("--cache and --scores hold headline text; keep them outside the repository.")
+        return 2
+    manifest = read_manifest(args.cache / "manifest.csv")
+    done = done_files(args.cache)
+    pull_stats = {
+        "files_in_manifest": len(manifest), "files_read": len(done),
+        "files_skipped": sum(r["status"] == "skipped" for r in manifest.values()),
+        "files_retried": sum(r["status"] == "retried" for r in manifest.values()),
+        "gkg_records": sum(int(manifest[f]["records"]) for f in done),
+        "indian_outlet_records": sum(int(manifest[f]["indian_records"]) for f in done),
+    }
+    records = load_records(args.cache)
+    prices = pd.read_csv(args.prices, parse_dates=["date"]).set_index("date")
+    earnings = pd.read_csv(args.earnings)
+    universe = [c for c in prices.columns if c != "^NSEI"]
+    heads = rp.to_headlines(records, universe)
+    pull_stats["indian_outlet_records_after_url_dedup"] = int(
+        records.sort_values(["date", "record_id"]).drop_duplicates("url").shape[0])
+
+    scores = pd.read_csv(args.scores) if args.scores.exists() else pd.DataFrame(columns=["title", "score"])
+    missing = sorted(set(heads["title"]) - set(scores["title"]))
+    if missing:
+        print(f"scoring {len(missing)} new titles with FinBERT ...", flush=True)
+        scores = pd.concat([scores, rp.score_titles(missing)], ignore_index=True)
+        args.scores.parent.mkdir(parents=True, exist_ok=True)
+        scores.to_csv(args.scores, index=False)
+    heads = rp.attach_scores(heads, scores)
+    data = rp.build_sample(heads, prices, earnings)
+    counts = rp.counts(data, heads, pull_stats)
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "v3_replication_counts.json").write_text(json.dumps(counts, indent=2, default=float))
+    print(json.dumps(counts, indent=2, default=float))
+    if not counts["sufficient"]:
+        print("VERDICT: underpowered, not tested (a tercile group has fewer than 15 events)")
+        return 0
+    if not args.run:
+        print("Counts only. H3 has not been run; pass --run to run it once.")
+        return 0
+
+    result_file = args.out / "v3_replication.json"
+    if result_file.exists():
+        print(f"{result_file} exists: the registered test has already been run once.")
+        return 2
+    from finpulse import storage
+    from finpulse.eventstudy import build
+
+    h3 = rp.run_h3(data["events"], n_perm=args.perm)
+    single = rp.build_sample(heads[heads["n_named"] == 1], prices, earnings)["events"]
+    orig = build(storage.load_headlines(path=args.orig_db), prices, earnings)["events"]
+    expl = rp.exploratory(data["events"], single, orig, n_perm=args.perm)
+    result_file.write_text(json.dumps({"h3": h3, "exploratory": expl.to_dict("records"),
+                                       "counts": counts}, indent=2, default=float))
+    expl.to_csv(args.out / "v3_replication_exploratory.csv", index=False)
+    print(json.dumps(h3, indent=2, default=float))
+    print(expl.to_string(index=False))
+    print(f"VERDICT: {h3['verdict']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m finpulse",
                                      description="FinPulse: Nifty 50 news sentiment.")
@@ -232,11 +320,34 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=["majority", "vader", "finbert", "zeroshot"])
     p.add_argument("--out", type=Path, default=RESULTS_DIR)
     p.add_argument("--labelled", type=Path, default=None,
-                   help="CSV of record_id,label[,title] to evaluate instead of PhraseBank")
+                   help="CSV of record_id,title,label to evaluate instead of PhraseBank")
     p.add_argument("--alternatives", type=Path, default=None,
                    help="with --labelled: CSV of borderline items (sheet,id,title,label_used,"
                         "plausible_alternative) for a label-sensitivity rerun")
     p.set_defaults(func=cmd_evaluate)
+
+    p = sub.add_parser("gdelt-pull", help="resumable pull of Indian-outlet GDELT GKG records")
+    p.add_argument("--start", default="20260101000000", help="first GKG timestamp (UTC)")
+    p.add_argument("--end", default="20261124234500", help="last GKG timestamp (UTC)")
+    p.add_argument("--cache", type=Path, required=True, help="directory outside the repo")
+    p.add_argument("--workers", type=int, default=3, choices=[1, 2, 3])
+    p.add_argument("--pause", type=float, default=0.5, help="seconds each worker waits per file")
+    p.add_argument("--progress-every", type=int, default=300)
+    p.set_defaults(func=cmd_gdelt_pull)
+
+    p = sub.add_parser("replicate-h3", help="pre-registered H3 replication on GDELT headlines")
+    p.add_argument("--cache", type=Path, required=True, help="gdelt-pull cache directory")
+    p.add_argument("--prices", type=Path, required=True)
+    p.add_argument("--earnings", type=Path, required=True)
+    p.add_argument("--scores", type=Path, required=True,
+                   help="FinBERT score cache CSV (title,score), kept outside the repo")
+    p.add_argument("--orig-db", type=Path, default=DB_PATH,
+                   help="frozen original database, for exploratory check E1")
+    p.add_argument("--out", type=Path, default=RESULTS_DIR)
+    p.add_argument("--perm", type=int, default=10_000)
+    p.add_argument("--run", action="store_true",
+                   help="run the registered test (once); without it only counts are reported")
+    p.set_defaults(func=cmd_replicate_h3)
 
     p = sub.add_parser("tagger-eval", help="rule-based event-type tagger vs labels")
     p.add_argument("--labelled", type=Path, required=True,
